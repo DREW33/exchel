@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exchel — Excel Automation Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/hyperformula@2.7.1/dist/hyperformula.full.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --green: #217346;
+    --green-dark: #185c37;
+    --grid-line: #d4d4d4;
+    --header-bg: #f5f5f5;
+    --sel: rgba(33, 115, 70, 0.12);
+    --sel-border: #217346;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: "Segoe UI", Calibri, Arial, sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; background: #fff; }
+
+  /* ---------- Toolbar ---------- */
+  #titlebar {
+    background: var(--green); color: #fff; padding: 6px 12px;
+    display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  }
+  #titlebar .logo { font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  #titlebar .sub { font-size: 11px; opacity: .85; }
+  #toolbar {
+    display: flex; align-items: center; gap: 4px; padding: 5px 8px;
+    border-bottom: 1px solid var(--grid-line); background: #fafafa; flex: 0 0 auto; flex-wrap: wrap;
+  }
+  #toolbar button, #toolbar label.btn {
+    border: 1px solid transparent; background: transparent; padding: 5px 9px;
+    font-size: 12.5px; cursor: pointer; border-radius: 4px; color: #333;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  #toolbar button:hover, #toolbar label.btn:hover { background: #e9efe9; border-color: #cfe0cf; }
+  #toolbar .sep { width: 1px; height: 20px; background: var(--grid-line); margin: 0 4px; }
+  #toolbar .grp-label { font-size: 10px; color: #888; margin-right: 2px; text-transform: uppercase; letter-spacing: .4px; }
+  #fileInput { display: none; }
+
+  /* ---------- Formula bar ---------- */
+  #formulabar {
+    display: flex; align-items: stretch; border-bottom: 1px solid var(--grid-line); flex: 0 0 auto;
+  }
+  #namebox {
+    width: 90px; border: none; border-right: 1px solid var(--grid-line);
+    padding: 6px 8px; font-size: 13px; text-align: center; outline: none; font-family: inherit;
+  }
+  #fxlabel { padding: 6px 8px; color: #888; font-style: italic; font-family: Georgia, serif; border-right: 1px solid var(--grid-line); user-select: none; }
+  #fxinput {
+    flex: 1; border: none; padding: 6px 10px; font-size: 13px; outline: none;
+    font-family: Consolas, "Courier New", monospace;
+  }
+
+  /* ---------- Main area ---------- */
+  #main { flex: 1 1 auto; display: flex; min-height: 0; }
+  #gridwrap { flex: 1 1 auto; overflow: auto; position: relative; }
+  table#grid { border-collapse: collapse; table-layout: fixed; user-select: none; }
+  #grid th, #grid td {
+    border: 1px solid var(--grid-line); font-size: 12.5px; font-weight: normal;
+    padding: 0 5px; height: 24px; overflow: hidden; white-space: nowrap; background: #fff;
+  }
+  #grid th {
+    background: var(--header-bg); color: #555; text-align: center; position: sticky; z-index: 2;
+    font-size: 11.5px; cursor: default;
+  }
+  #grid thead th { top: 0; }
+  #grid tbody th { left: 0; width: 46px; min-width: 46px; }
+  #grid thead th.corner { left: 0; z-index: 4; }
+  #grid td { width: 92px; min-width: 92px; max-width: 92px; cursor: cell; }
+  #grid td.num { text-align: right; }
+  #grid td.err { color: #c00; font-weight: 600; }
+  #grid td.insel { background: var(--sel); }
+  #grid td.active { outline: 2px solid var(--sel-border); outline-offset: -2px; background: #fff; }
+  #grid th.hl { background: #dceadf; color: var(--green-dark); font-weight: 600; }
+  #celleditor {
+    position: absolute; display: none; z-index: 5; border: 2px solid var(--sel-border);
+    font: 12.5px Consolas, monospace; padding: 0 4px; outline: none; background: #fff;
+  }
+
+  /* ---------- Sidebar: function reference ---------- */
+  #sidebar {
+    width: 250px; flex: 0 0 auto; border-left: 1px solid var(--grid-line);
+    display: flex; flex-direction: column; background: #fbfbfb;
+  }
+  #sidebar h3 { margin: 0; padding: 9px 12px 4px; font-size: 12.5px; color: var(--green-dark); }
+  #sidebar .fncount { padding: 0 12px 6px; font-size: 11px; color: #888; }
+  #fnsearch {
+    margin: 0 10px 8px; padding: 6px 8px; border: 1px solid var(--grid-line); border-radius: 4px;
+    font-size: 12px; outline: none;
+  }
+  #fnsearch:focus { border-color: var(--green); }
+  #fnlist { flex: 1; overflow-y: auto; margin: 0; padding: 0 0 8px; list-style: none; }
+  #fnlist li {
+    padding: 4px 12px; font: 12px Consolas, monospace; cursor: pointer; color: #333;
+  }
+  #fnlist li:hover { background: #e9efe9; color: var(--green-dark); }
+  #fnlist li.selfn { background: #dceadf; color: var(--green-dark); font-weight: 700; }
+  #fnlist li .cat { float: right; font-size: 9.5px; color: #aaa; font-family: "Segoe UI", sans-serif; }
+
+  /* ---------- Function help card ---------- */
+  #fnhelp {
+    display: none; flex: 0 0 auto; border-top: 2px solid var(--green);
+    background: #fff; padding: 10px 12px; max-height: 45%; overflow-y: auto;
+  }
+  #fnhelp .fh-name { font: 700 14px Consolas, monospace; color: var(--green-dark); }
+  #fnhelp .fh-syntax {
+    font: 11.5px Consolas, monospace; background: #f2f7f2; border: 1px solid #dceadf;
+    border-radius: 4px; padding: 5px 7px; margin: 6px 0; word-break: break-all; color: #333;
+  }
+  #fnhelp .fh-desc { font-size: 12px; color: #444; line-height: 1.45; }
+  #fnhelp .fh-ex {
+    font: 11.5px Consolas, monospace; margin: 7px 0; color: #555; word-break: break-all;
+  }
+  #fnhelp .fh-ex b { color: var(--green-dark); }
+  #fnhelp .fh-btns { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  #fnhelp .fh-btns button {
+    background: var(--green); color: #fff; border: none; border-radius: 4px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
+  }
+  #fnhelp .fh-btns button:hover { background: var(--green-dark); }
+  #fnhelp .fh-btns a { font-size: 11px; color: #2b6cb0; text-decoration: none; }
+  #fnhelp .fh-btns a:hover { text-decoration: underline; }
+  #fnhelp .fh-close { float: right; cursor: pointer; color: #999; font-size: 14px; padding: 0 2px; }
+  #fnhelp .fh-close:hover { color: #333; }
+
+  /* ---------- Help modal (wide) ---------- */
+  .modal.wide { width: 560px; max-height: 80vh; overflow-y: auto; }
+  .modal.wide h4 { margin: 14px 0 4px; font-size: 13px; color: var(--green-dark); border-bottom: 1px solid #dceadf; padding-bottom: 3px; }
+  .modal.wide table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .modal.wide td { padding: 4px 8px 4px 0; vertical-align: top; color: #444; }
+  .modal.wide td:first-child { white-space: nowrap; font-weight: 600; color: #222; width: 130px; }
+  .modal.wide kbd {
+    background: #f2f2f2; border: 1px solid #ccc; border-bottom-width: 2px; border-radius: 3px;
+    padding: 0 5px; font: 11px Consolas, monospace;
+  }
+
+  /* ---------- Bottom: sheet tabs + status ---------- */
+  #bottombar {
+    flex: 0 0 auto; display: flex; align-items: center; border-top: 1px solid var(--grid-line);
+    background: #f5f5f5; font-size: 12px;
+  }
+  #sheettabs { display: flex; align-items: stretch; overflow-x: auto; }
+  .sheettab {
+    padding: 6px 16px; border-right: 1px solid var(--grid-line); cursor: pointer; white-space: nowrap;
+    background: #ececec; color: #444;
+  }
+  .sheettab.cur { background: #fff; color: var(--green-dark); font-weight: 600; border-top: 2px solid var(--green); }
+  #addsheet { padding: 6px 12px; cursor: pointer; color: var(--green); font-weight: 700; }
+  #addsheet:hover { background: #e9efe9; }
+  #status { margin-left: auto; padding: 6px 14px; color: #555; display: flex; gap: 18px; }
+  #status b { color: var(--green-dark); }
+
+  /* ---------- Modal (pivot builder) ---------- */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none;
+    z-index: 50; align-items: center; justify-content: center;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 8px; padding: 18px 22px; width: 330px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  }
+  .modal h3 { margin: 0 0 4px; color: var(--green-dark); font-size: 15px; }
+  .modal .muted { font-size: 11px; color: #888; margin-bottom: 6px; }
+  .modal label { display: block; font-size: 12px; margin: 10px 0 3px; color: #555; }
+  .modal select {
+    width: 100%; padding: 6px; border: 1px solid var(--grid-line); border-radius: 4px;
+    font-size: 13px; background: #fff; outline: none;
+  }
+  .modal select:focus { border-color: var(--green); }
+  .modal input[type="text"] {
+    width: 100%; padding: 6px; border: 1px solid var(--grid-line); border-radius: 4px;
+    font-size: 13px; outline: none;
+  }
+  .modal input[type="text"]:focus { border-color: var(--green); }
+  #chCanvas { background: #fff; margin-top: 10px; max-width: 100%; }
+  #chartmodal .modal { width: 660px; }
+  .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .modal-btns button {
+    padding: 6px 14px; border-radius: 4px; border: 1px solid var(--grid-line);
+    background: #fff; cursor: pointer; font-size: 12.5px;
+  }
+  .modal-btns button.primary { background: var(--green); color: #fff; border-color: var(--green); }
+  .modal-btns button.primary:hover { background: var(--green-dark); }
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <span class="logo">▦ Exchel</span>
+  <span class="sub">Excel Automation Tool — full formula engine · .xlsx open &amp; save</span>
+</div>
+
+<div id="toolbar">
+  <span class="grp-label">File</span>
+  <button id="btnNew" title="New blank workbook">🗋 New</button>
+  <label class="btn" for="fileInput" title="Open an .xlsx / .xls / .csv file">📂 Open<input type="file" id="fileInput" accept=".xlsx,.xls,.csv"></label>
+  <button id="btnSaveX" title="Download workbook as .xlsx (formulas preserved)">💾 Save .xlsx</button>
+  <button id="btnSaveC" title="Download current sheet as .csv">⬇ CSV</button>
+  <span class="sep"></span>
+  <span class="grp-label">Edit</span>
+  <button id="btnUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
+  <button id="btnRedo" title="Redo (Ctrl+Y)">↷ Redo</button>
+  <button id="btnClear" title="Clear selected cells (Delete)">✕ Clear</button>
+  <span class="sep"></span>
+  <span class="grp-label">Automate</span>
+  <button id="btnAuto" title="One click does everything: clean the data, build a column analysis, create a pivot with auto-detected fields, and draw a chart">⚡ Auto Report</button>
+  <button id="btnSum" title="Insert SUM of the selection below it">Σ AutoSum</button>
+  <button id="btnFillD" title="Fill first row of selection down (Ctrl+D)">⤓ Fill Down</button>
+  <button id="btnFillR" title="Fill first column of selection right (Ctrl+R)">⤏ Fill Right</button>
+  <button id="btnSortA" title="Sort selected rows by first column, ascending">A→Z Sort</button>
+  <button id="btnSortD" title="Sort selected rows by first column, descending">Z→A Sort</button>
+  <button id="btnFind" title="Find and replace across the current sheet">🔎 Replace</button>
+  <button id="btnPivot" title="Build a pivot table from the selected data (or whole sheet) into a new sheet">⊞ Pivot Table</button>
+  <button id="btnClean" title="One click: trim spaces, convert text-numbers, remove blank rows and duplicate rows">🧹 Clean Data</button>
+  <span class="sep"></span>
+  <span class="grp-label">Analyze</span>
+  <button id="btnChart" title="Draw a bar / line / pie chart from the selected data">📊 Chart</button>
+  <button id="btnCF" title="Highlight cells by rule: greater than, duplicates, top 10…">🎨 Highlight</button>
+  <button id="btnFilter" title="Show only rows where the active column matches a condition">⏳ Filter</button>
+  <button id="btnUnfilter" title="Remove the filter — show all rows again">⊘ Show All</button>
+  <button id="btnSplit" title="Split the active column into several columns by a separator (Text to Columns)">✂ Split Col</button>
+  <label class="btn" for="mergeInput" title="Combine several .xlsx / .csv files into this workbook">📚 Merge Files<input type="file" id="mergeInput" multiple accept=".xlsx,.xls,.csv" style="display:none"></label>
+  <button id="btnAnalyze" title="One-click summary report: count, sum, average, min, max, distinct per column">📈 Analyze</button>
+  <span class="sep"></span>
+  <span class="grp-label">Grid</span>
+  <button id="btnMoreRows" title="Add rows — you choose how many">+ Rows…</button>
+  <button id="btnMoreCols" title="Add columns — you choose how many">+ Cols…</button>
+  <span class="sep"></span>
+  <button id="btnHelp" title="How to use every tool and shortcut">❓ Help</button>
+</div>
+
+<div id="formulabar">
+  <input id="namebox" value="A1" spellcheck="false" title="Cell reference — type e.g. C10 and press Enter">
+  <span id="fxlabel">fx</span>
+  <input id="fxinput" spellcheck="false" placeholder="Type a value or a formula starting with =  (e.g. =SUM(A1:A10))">
+</div>
+
+<div id="main">
+  <div id="gridwrap">
+    <table id="grid"><thead></thead><tbody></tbody></table>
+    <input id="celleditor" spellcheck="false" autocomplete="off">
+  </div>
+  <div id="sidebar">
+    <h3>ƒx Formula Reference</h3>
+    <div class="fncount" id="fncount"></div>
+    <input id="fnsearch" placeholder="Search functions… e.g. VLOOKUP">
+    <ul id="fnlist"></ul>
+    <div id="fnhelp">
+      <span class="fh-close" id="fhClose" title="Close help">✕</span>
+      <div class="fh-name" id="fhName"></div>
+      <div class="fh-syntax" id="fhSyntax"></div>
+      <div class="fh-desc" id="fhDesc"></div>
+      <div class="fh-ex" id="fhEx"></div>
+      <div class="fh-btns">
+        <button id="fhInsert">Insert into cell</button>
+        <a id="fhDocs" target="_blank" rel="noopener">Microsoft docs ↗</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="pivotmodal" class="modal-bg">
+  <div class="modal">
+    <h3>⊞ Create Pivot Table</h3>
+    <div class="muted" id="pvRange"></div>
+    <label>Rows — group by</label>
+    <select id="pvRow"></select>
+    <label>Columns — split across (optional)</label>
+    <select id="pvCol"></select>
+    <label>Values — the field to calculate</label>
+    <select id="pvVal"></select>
+    <label>Calculation</label>
+    <select id="pvAgg">
+      <option>SUM</option><option>COUNT</option><option>AVERAGE</option>
+      <option>MIN</option><option>MAX</option>
+    </select>
+    <div class="modal-btns">
+      <button id="pvCancel">Cancel</button>
+      <button id="pvCreate" class="primary">Create Pivot Sheet</button>
+    </div>
+  </div>
+</div>
+
+<div id="chartmodal" class="modal-bg">
+  <div class="modal">
+    <h3>📊 Chart</h3>
+    <div class="muted" id="chRange"></div>
+    <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+      <select id="chType" style="width:auto;">
+        <option value="bar">Bar</option>
+        <option value="line">Line</option>
+        <option value="pie">Pie</option>
+        <option value="doughnut">Doughnut</option>
+      </select>
+      <button id="chDownload" style="padding:6px 12px; border:1px solid var(--grid-line); border-radius:4px; background:#fff; cursor:pointer; font-size:12.5px;">⬇ Download PNG</button>
+    </div>
+    <canvas id="chCanvas" width="600" height="360"></canvas>
+    <div class="modal-btns">
+      <button id="chClose" class="primary">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="cfmodal" class="modal-bg">
+  <div class="modal">
+    <h3>🎨 Highlight Cells</h3>
+    <div class="muted" id="cfRange"></div>
+    <label>Rule</label>
+    <select id="cfType">
+      <option value="gt">Greater than…</option>
+      <option value="lt">Less than…</option>
+      <option value="eq">Equal to…</option>
+      <option value="contains">Text contains…</option>
+      <option value="dup">Duplicate values</option>
+      <option value="top">Top 10 values</option>
+      <option value="blank">Blank cells</option>
+    </select>
+    <label id="cfValueLabel">Value</label>
+    <input type="text" id="cfValue" placeholder="e.g. 100">
+    <label>Highlight colour</label>
+    <select id="cfColor">
+      <option value="red">🔴 Red</option>
+      <option value="yellow" selected>🟡 Yellow</option>
+      <option value="green">🟢 Green</option>
+      <option value="blue">🔵 Blue</option>
+      <option value="orange">🟠 Orange</option>
+    </select>
+    <div class="modal-btns">
+      <button id="cfClearAll">Remove all rules</button>
+      <button id="cfCancel">Cancel</button>
+      <button id="cfApply" class="primary">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div id="helpmodal" class="modal-bg">
+  <div class="modal wide">
+    <h3>❓ How to use Exchel — every tool</h3>
+
+    <h4>File</h4>
+    <table>
+      <tr><td>🗋 New</td><td>Start a blank workbook (asks first — unsaved work is lost).</td></tr>
+      <tr><td>📂 Open</td><td>Open an <b>.xlsx</b>, <b>.xls</b> or <b>.csv</b> file from your computer. Formulas inside are imported and recalculated.</td></tr>
+      <tr><td>💾 Save .xlsx</td><td>Download the whole workbook as a real Excel file — formulas are preserved, so it keeps calculating in Excel.</td></tr>
+      <tr><td>⬇ CSV</td><td>Download only the current sheet as plain CSV (values, no formulas).</td></tr>
+    </table>
+
+    <h4>Edit</h4>
+    <table>
+      <tr><td>↶ Undo / ↷ Redo</td><td>Step backwards / forwards. Shortcut: <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</td></tr>
+      <tr><td>✕ Clear</td><td>Empty the selected cells. Shortcut: <kbd>Delete</kbd>.</td></tr>
+    </table>
+
+    <h4>Automate</h4>
+    <table>
+      <tr><td>⚡ Auto Report</td><td><b>One click does everything:</b> cleans the data, writes an Analysis sheet with statistics for every column, auto-detects the label column and the number column, builds a SUM pivot, and opens a chart of it — ready to download as PNG.</td></tr>
+      <tr><td>Σ AutoSum</td><td>Select numbers, click — a <b>=SUM(…)</b> formula is written in the cell below the selection.</td></tr>
+      <tr><td>⤓ Fill Down</td><td>Copies the top row of the selection into every row below it. Formulas shift automatically (A1 → A2 → A3…; use $A$1 to lock). Shortcut: <kbd>Ctrl+D</kbd>.</td></tr>
+      <tr><td>⤏ Fill Right</td><td>Same, but copies the left column across. Shortcut: <kbd>Ctrl+R</kbd>.</td></tr>
+      <tr><td>A→Z / Z→A Sort</td><td>Select whole rows of data, click — rows are sorted by the first selected column.</td></tr>
+      <tr><td>🔎 Replace</td><td>Find &amp; replace text across the whole current sheet.</td></tr>
+      <tr><td>⊞ Pivot Table</td><td>Select your data (or just click one cell — the whole sheet is used). First row must be headers. Pick Rows / Columns / Values / Calculation, and a finished pivot with totals appears on a new sheet.</td></tr>
+      <tr><td>🧹 Clean Data</td><td>One click: trims spaces, turns text like "1,250" into real numbers, deletes blank rows and duplicate rows. Fully undoable with <kbd>Ctrl+Z</kbd>.</td></tr>
+    </table>
+
+    <h4>Analyze</h4>
+    <table>
+      <tr><td>📊 Chart</td><td>Select data (labels in the first column, numbers next to them) and click. Switch between bar / line / pie / doughnut and download as PNG.</td></tr>
+      <tr><td>🎨 Highlight</td><td>Conditional formatting: colour cells that are greater / less than a value, equal to something, contain text, are duplicates, top-10, or blank.</td></tr>
+      <tr><td>⏳ Filter</td><td>Click a cell in the column to filter, then enter a condition like <b>&gt;100</b>, <b>=South</b> or plain text (contains). Non-matching rows are hidden on screen.</td></tr>
+      <tr><td>⊘ Show All</td><td>Removes the filter — all rows visible again.</td></tr>
+      <tr><td>✂ Split Col</td><td>Text to Columns: splits the active column by a separator (comma, space, dash…) into the columns beside it.</td></tr>
+      <tr><td>📚 Merge Files</td><td>Pick several .xlsx / .csv files at once — each becomes a sheet tab, and optionally all rows are stacked into one "Combined" sheet (headers kept once). Perfect for combining monthly reports.</td></tr>
+      <tr><td>📈 Analyze</td><td>One click writes a summary report sheet: filled cells, numbers, blanks, distinct values, sum, average, min and max for every column.</td></tr>
+      <tr><td>+ Rows… / + Cols…</td><td>Adds rows or columns to the grid — a box asks how many you need (2, 50, anything).</td></tr>
+    </table>
+
+    <h4>Formulas</h4>
+    <table>
+      <tr><td>Formula bar (fx)</td><td>Click a cell, type <b>=SUM(A1:A10)</b> and press <kbd>Enter</kbd>. While typing a formula you can <b>click any cell</b> to insert its reference, just like Excel.</td></tr>
+      <tr><td>Name box</td><td>Type a cell address (e.g. <b>C10</b>) and press <kbd>Enter</kbd> to jump there.</td></tr>
+      <tr><td>Sidebar list</td><td><b>Click any function</b> to see its syntax, description and a worked example — then press "Insert into cell". Double-click inserts straight away.</td></tr>
+    </table>
+
+    <h4>Keyboard shortcuts</h4>
+    <table>
+      <tr><td><kbd>Arrows</kbd> / <kbd>Enter</kbd> / <kbd>Tab</kbd></td><td>Move around (Shift+Arrows extends the selection).</td></tr>
+      <tr><td><kbd>F2</kbd></td><td>Edit the active cell.</td></tr>
+      <tr><td><kbd>Ctrl+C</kbd> / <kbd>Ctrl+V</kbd></td><td>Copy / paste — works with real Excel and Google Sheets via the clipboard.</td></tr>
+      <tr><td><kbd>Ctrl+A</kbd></td><td>Select everything.</td></tr>
+    </table>
+
+    <div class="modal-btns">
+      <button id="helpClose" class="primary">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div id="bottombar">
+  <div id="sheettabs"></div>
+  <div id="addsheet" title="Add sheet">＋</div>
+  <div id="status">
+    <span>Sum: <b id="stSum">0</b></span>
+    <span>Avg: <b id="stAvg">–</b></span>
+    <span>Count: <b id="stCnt">0</b></span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ================= XLOOKUP (not built into HyperFormula) ================= */
+const { FunctionPlugin, FunctionArgumentType } = HyperFormula;
+class XLookupPlugin extends FunctionPlugin {
+  xlookup(ast, state) {
+    return this.runFunction(ast.args, state, this.metadata("XLOOKUP"),
+      (lookup, lookupRange, returnRange, ifNotFound) => {
+        const flat = rv => (rv && rv.data ? rv.data.flat() : [rv]);
+        const lv = flat(lookupRange), rvArr = flat(returnRange);
+        const eq = (a, b) =>
+          (typeof a === "string" && typeof b === "string")
+            ? a.toLowerCase() === b.toLowerCase() : a === b;
+        for (let i = 0; i < lv.length; i++) {
+          if (eq(lv[i], lookup)) return i < rvArr.length ? rvArr[i] : null;
+        }
+        if (ifNotFound !== undefined && ifNotFound !== null) return ifNotFound;
+        return "#N/A";
+      });
+  }
+}
+XLookupPlugin.implementedFunctions = {
+  XLOOKUP: {
+    method: "xlookup",
+    parameters: [
+      { argumentType: FunctionArgumentType.NOERROR },
+      { argumentType: FunctionArgumentType.RANGE },
+      { argumentType: FunctionArgumentType.RANGE },
+      { argumentType: FunctionArgumentType.SCALAR, optionalArg: true }
+    ]
+  }
+};
+HyperFormula.registerFunctionPlugin(XLookupPlugin, { enGB: { XLOOKUP: "XLOOKUP" } });
+
+/* Excel lets you write bare TRUE/FALSE; HyperFormula wants TRUE()/FALSE().
+   Convert outside string literals only. */
+function fixBooleans(f) {
+  return f.split(/("(?:[^"]|"")*")/).map((seg, i) =>
+    i % 2 ? seg : seg.replace(/\b(TRUE|FALSE)\b(?!\s*\()/gi, "$1()")
+  ).join("");
+}
+
+/* ================= Engine ================= */
+let hf = HyperFormula.buildEmpty({ licenseKey: "gpl-v3" });
+let curSheet = 0;
+let ROWS = 100, COLS = 26;
+
+/* selection state */
+let sel = { r1: 0, c1: 0, r2: 0, c2: 0 };   // normalized on read
+let anchor = { r: 0, c: 0 };
+let active = { r: 0, c: 0 };
+let dragging = false;
+let editing = false;      // cell editor open
+let editTarget = null;    // {r,c}
+
+const $ = id => document.getElementById(id);
+const grid = $("grid"), thead = grid.querySelector("thead"), tbody = grid.querySelector("tbody");
+const editor = $("celleditor"), fx = $("fxinput"), namebox = $("namebox");
+
+function colName(c) {
+  let s = "";
+  c++;
+  while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = (c - m - 1) / 26; }
+  return s;
+}
+function cellRef(r, c) { return colName(c) + (r + 1); }
+function parseRef(txt) {
+  const m = /^([A-Za-z]{1,3})([0-9]{1,7})$/.exec(txt.trim());
+  if (!m) return null;
+  let c = 0;
+  for (const ch of m[1].toUpperCase()) c = c * 26 + (ch.charCodeAt(0) - 64);
+  return { r: parseInt(m[2], 10) - 1, c: c - 1 };
+}
+function normSel() {
+  return {
+    r1: Math.min(sel.r1, sel.r2), r2: Math.max(sel.r1, sel.r2),
+    c1: Math.min(sel.c1, sel.c2), c2: Math.max(sel.c1, sel.c2)
+  };
+}
+function addr(r, c) { return { sheet: curSheet, row: r, col: c }; }
+
+/* ================= Grid build & paint ================= */
+function buildGrid() {
+  let h = "<tr><th class='corner'></th>";
+  for (let c = 0; c < COLS; c++) h += `<th data-c="${c}">${colName(c)}</th>`;
+  thead.innerHTML = h + "</tr>";
+  let b = "";
+  for (let r = 0; r < ROWS; r++) {
+    b += `<tr><th data-r="${r}">${r + 1}</th>`;
+    for (let c = 0; c < COLS; c++) b += `<td data-r="${r}" data-c="${c}"></td>`;
+    b += "</tr>";
+  }
+  tbody.innerHTML = b;
+  paintAll();
+}
+
+function displayValue(r, c) {
+  let v;
+  try { v = hf.getCellValue(addr(r, c)); } catch (e) { return { text: "", cls: "" }; }
+  if (v === null || v === undefined) return { text: "", cls: "" };
+  if (typeof v === "object" && v.value !== undefined) return { text: v.value, cls: "err" }; // DetailedCellError
+  if (typeof v === "number") {
+    let text = Number.isInteger(v) ? String(v) : String(Math.round(v * 1e10) / 1e10);
+    return { text, cls: "num" };
+  }
+  if (typeof v === "boolean") return { text: v ? "TRUE" : "FALSE", cls: "num" };
+  return { text: String(v), cls: "" };
+}
+
+function paintAll() {
+  const s = normSel();
+  const cfMap = typeof computeCfMap === "function" ? computeCfMap() : null;
+  const rows = tbody.rows;
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rows[r].cells;
+    for (let c = 1; c < cells.length; c++) {
+      const td = cells[c], cc = c - 1;
+      const d = displayValue(r, cc);
+      if (td.textContent !== d.text) td.textContent = d.text;
+      let cls = d.cls;
+      if (r >= s.r1 && r <= s.r2 && cc >= s.c1 && cc <= s.c2) cls += " insel";
+      if (r === active.r && cc === active.c) cls += " active";
+      td.className = cls.trim();
+      const bg = cfMap ? cfMap.get(r + "," + cc) : undefined;
+      td.style.background = bg || "";
+    }
+  }
+  // header highlight
+  thead.querySelectorAll("th[data-c]").forEach(th => {
+    const c = +th.dataset.c;
+    th.classList.toggle("hl", c >= s.c1 && c <= s.c2);
+  });
+  tbody.querySelectorAll("th[data-r]").forEach(th => {
+    const r = +th.dataset.r;
+    th.classList.toggle("hl", r >= s.r1 && r <= s.r2);
+  });
+  syncFormulaBar();
+  updateStatus();
+}
+
+function syncFormulaBar() {
+  namebox.value = cellRef(active.r, active.c);
+  if (document.activeElement === fx) return;
+  const f = hf.getCellFormula(addr(active.r, active.c));
+  if (f !== undefined && f !== null) { fx.value = f; return; }
+  const v = hf.getCellSerialized(addr(active.r, active.c));
+  fx.value = (v === null || v === undefined) ? "" : String(v);
+}
+
+function updateStatus() {
+  const s = normSel();
+  let sum = 0, cnt = 0, n = 0;
+  for (let r = s.r1; r <= s.r2; r++) for (let c = s.c1; c <= s.c2; c++) {
+    const v = hf.getCellValue(addr(r, c));
+    if (v !== null && v !== undefined && !(typeof v === "object")) {
+      cnt++;
+      if (typeof v === "number") { sum += v; n++; }
+    }
+  }
+  $("stSum").textContent = Math.round(sum * 1e6) / 1e6;
+  $("stAvg").textContent = n ? String(Math.round((sum / n) * 1e6) / 1e6) : "–";
+  $("stCnt").textContent = cnt;
+}
+
+/* ================= Editing ================= */
+function parseInput(raw) {
+  if (typeof raw !== "string") return raw === undefined ? null : raw;
+  if (raw === "") return null;
+  if (raw.startsWith("=")) return fixBooleans(raw);
+  if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(raw.trim())) return parseFloat(raw);
+  if (/^(true|false)$/i.test(raw.trim())) return raw.trim().toLowerCase() === "true";
+  return raw;
+}
+
+function setCell(r, c, raw) {
+  try { hf.setCellContents(addr(r, c), parseInput(raw)); }
+  catch (e) { alert("Formula error: " + e.message); }
+}
+
+function startEdit(r, c, initial) {
+  const td = tbody.rows[r].cells[c + 1];
+  const wrap = $("gridwrap");
+  const rect = td.getBoundingClientRect(), wrect = wrap.getBoundingClientRect();
+  editor.style.left = (rect.left - wrect.left + wrap.scrollLeft) + "px";
+  editor.style.top = (rect.top - wrect.top + wrap.scrollTop) + "px";
+  editor.style.width = Math.max(rect.width, 120) + "px";
+  editor.style.height = rect.height + "px";
+  editor.style.display = "block";
+  if (initial !== undefined) editor.value = initial;
+  else {
+    const f = hf.getCellFormula(addr(r, c));
+    if (f !== undefined && f !== null) editor.value = f;
+    else {
+      const v = hf.getCellSerialized(addr(r, c));
+      editor.value = (v === null || v === undefined) ? "" : String(v);
+    }
+  }
+  editing = true; editTarget = { r, c };
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+}
+
+function commitEdit(move) {
+  if (!editing) return;
+  setCell(editTarget.r, editTarget.c, editor.value);
+  stopEdit();
+  if (move === "down") moveActive(1, 0);
+  else if (move === "right") moveActive(0, 1);
+  else paintAll();
+}
+function stopEdit() {
+  editing = false; editTarget = null;
+  editor.style.display = "none"; editor.value = "";
+  $("gridwrap").focus?.();
+}
+function cancelEdit() { stopEdit(); paintAll(); }
+
+function moveActive(dr, dc, extend) {
+  const r = Math.min(Math.max(active.r + dr, 0), ROWS - 1);
+  const c = Math.min(Math.max(active.c + dc, 0), COLS - 1);
+  active = { r, c };
+  if (extend) { sel.r2 = r; sel.c2 = c; }
+  else { sel = { r1: r, c1: c, r2: r, c2: c }; anchor = { r, c }; }
+  paintAll();
+  scrollToActive();
+}
+function scrollToActive() {
+  const td = tbody.rows[active.r]?.cells[active.c + 1];
+  td?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+/* ================= Mouse ================= */
+tbody.addEventListener("mousedown", e => {
+  const td = e.target.closest("td");
+  if (!td) return;
+  const r = +td.dataset.r, c = +td.dataset.c;
+  // Excel-style: clicking a cell while typing a formula inserts its reference
+  if (editing && editor.value.startsWith("=")) {
+    e.preventDefault();
+    const v = editor.value;
+    const needsRef = /[=(,:+\-*/^&<>]$/.test(v.trimEnd());
+    editor.value = needsRef ? v + cellRef(r, c) : v.replace(/[A-Z]{1,3}[0-9]{1,7}$/, "") + cellRef(r, c);
+    editor.focus();
+    return;
+  }
+  if (editing) commitEdit();
+  dragging = true;
+  if (e.shiftKey) { sel = { r1: anchor.r, c1: anchor.c, r2: r, c2: c }; }
+  else { anchor = { r, c }; sel = { r1: r, c1: c, r2: r, c2: c }; }
+  active = { r, c };
+  paintAll();
+});
+tbody.addEventListener("mouseover", e => {
+  if (!dragging) return;
+  const td = e.target.closest("td");
+  if (!td) return;
+  sel.r2 = +td.dataset.r; sel.c2 = +td.dataset.c;
+  paintAll();
+});
+document.addEventListener("mouseup", () => dragging = false);
+tbody.addEventListener("dblclick", e => {
+  const td = e.target.closest("td");
+  if (!td) return;
+  startEdit(+td.dataset.r, +td.dataset.c);
+});
+// click column header selects column, row header selects row
+thead.addEventListener("mousedown", e => {
+  const th = e.target.closest("th[data-c]");
+  if (!th) return;
+  const c = +th.dataset.c;
+  sel = { r1: 0, c1: c, r2: ROWS - 1, c2: c }; active = { r: 0, c }; anchor = { r: 0, c };
+  paintAll();
+});
+tbody.addEventListener("mousedown", e => {
+  const th = e.target.closest("th[data-r]");
+  if (!th) return;
+  const r = +th.dataset.r;
+  sel = { r1: r, c1: 0, r2: r, c2: COLS - 1 }; active = { r, c: 0 }; anchor = { r, c: 0 };
+  paintAll();
+});
+
+/* ================= Keyboard ================= */
+editor.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); commitEdit("down"); }
+  else if (e.key === "Tab") { e.preventDefault(); commitEdit("right"); }
+  else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
+  e.stopPropagation();
+});
+
+fx.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    setCell(active.r, active.c, fx.value);
+    fx.blur(); moveActive(1, 0);
+  } else if (e.key === "Escape") { fx.blur(); syncFormulaBar(); }
+  e.stopPropagation();
+});
+namebox.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const p = parseRef(namebox.value);
+    if (p && p.r < ROWS && p.c < COLS) {
+      active = { r: p.r, c: p.c }; anchor = { ...p };
+      sel = { r1: p.r, c1: p.c, r2: p.r, c2: p.c };
+      paintAll(); scrollToActive();
+    }
+    namebox.blur();
+  }
+  e.stopPropagation();
+});
+
+document.addEventListener("keydown", e => {
+  if (editing || document.activeElement === fx || document.activeElement === namebox
+      || document.activeElement === $("fnsearch")) return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && e.key.toLowerCase() === "z") { e.preventDefault(); doUndo(); return; }
+  if (ctrl && e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); return; }
+  if (ctrl && e.key.toLowerCase() === "d") { e.preventDefault(); fillDown(); return; }
+  if (ctrl && e.key.toLowerCase() === "r") { e.preventDefault(); fillRight(); return; }
+  if (ctrl && e.key.toLowerCase() === "a") { e.preventDefault(); sel = { r1: 0, c1: 0, r2: ROWS - 1, c2: COLS - 1 }; paintAll(); return; }
+  switch (e.key) {
+    case "ArrowUp": e.preventDefault(); moveActive(-1, 0, e.shiftKey); return;
+    case "ArrowDown": e.preventDefault(); moveActive(1, 0, e.shiftKey); return;
+    case "ArrowLeft": e.preventDefault(); moveActive(0, -1, e.shiftKey); return;
+    case "ArrowRight": e.preventDefault(); moveActive(0, 1, e.shiftKey); return;
+    case "Enter": e.preventDefault(); moveActive(1, 0); return;
+    case "Tab": e.preventDefault(); moveActive(0, e.shiftKey ? -1 : 1); return;
+    case "F2": e.preventDefault(); startEdit(active.r, active.c); return;
+    case "Delete": case "Backspace": e.preventDefault(); clearSelection(); return;
+  }
+  // printable char starts editing (replace)
+  if (e.key.length === 1 && !ctrl && !e.altKey) {
+    e.preventDefault();
+    startEdit(active.r, active.c, e.key);
+  }
+});
+
+/* ================= Clipboard ================= */
+document.addEventListener("copy", e => {
+  if (editing || document.activeElement === fx) return;
+  const s = normSel();
+  const rows = [];
+  for (let r = s.r1; r <= s.r2; r++) {
+    const row = [];
+    for (let c = s.c1; c <= s.c2; c++) {
+      const v = hf.getCellSerialized(addr(r, c));
+      row.push(v === null || v === undefined ? "" : String(v));
+    }
+    rows.push(row.join("\t"));
+  }
+  e.clipboardData.setData("text/plain", rows.join("\n"));
+  e.preventDefault();
+});
+document.addEventListener("paste", e => {
+  if (editing || document.activeElement === fx || document.activeElement === namebox) return;
+  const txt = e.clipboardData.getData("text/plain");
+  if (!txt) return;
+  e.preventDefault();
+  const lines = txt.replace(/\r/g, "").split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  hf.batch(() => {
+    lines.forEach((line, dr) => {
+      line.split("\t").forEach((val, dc) => {
+        const r = active.r + dr, c = active.c + dc;
+        if (r < ROWS && c < COLS) setCell(r, c, val);
+      });
+    });
+  });
+  paintAll();
+});
+
+/* ================= Toolbar actions ================= */
+function clearSelection() {
+  const s = normSel();
+  hf.batch(() => {
+    for (let r = s.r1; r <= s.r2; r++)
+      for (let c = s.c1; c <= s.c2; c++)
+        hf.setCellContents(addr(r, c), null);
+  });
+  paintAll();
+}
+function doUndo() { if (hf.isThereSomethingToUndo()) { hf.undo(); paintAll(); } }
+function doRedo() { if (hf.isThereSomethingToRedo()) { hf.redo(); paintAll(); } }
+
+function autoSum() {
+  const s = normSel();
+  const range = `${cellRef(s.r1, s.c1)}:${cellRef(s.r2, s.c2)}`;
+  const target = { r: s.r2 + 1, c: s.c1 };
+  if (target.r >= ROWS) return;
+  setCell(target.r, target.c, `=SUM(${range})`);
+  active = target; sel = { r1: target.r, c1: target.c, r2: target.r, c2: target.c };
+  paintAll();
+}
+function fillDown() {
+  const s = normSel();
+  // read sources first — reading is not allowed inside batch()
+  const srcs = [];
+  for (let c = s.c1; c <= s.c2; c++) srcs.push(hf.getCellSerialized(addr(s.r1, c)));
+  hf.batch(() => {
+    for (let c = s.c1; c <= s.c2; c++) {
+      const src = srcs[c - s.c1];
+      for (let r = s.r1 + 1; r <= s.r2; r++) {
+        if (typeof src === "string" && src.startsWith("=")) {
+          // shift relative row references
+          hf.setCellContents(addr(r, c), shiftFormula(src, r - s.r1, 0));
+        } else hf.setCellContents(addr(r, c), src ?? null);
+      }
+    }
+  });
+  paintAll();
+}
+function fillRight() {
+  const s = normSel();
+  const srcs = [];
+  for (let r = s.r1; r <= s.r2; r++) srcs.push(hf.getCellSerialized(addr(r, s.c1)));
+  hf.batch(() => {
+    for (let r = s.r1; r <= s.r2; r++) {
+      const src = srcs[r - s.r1];
+      for (let c = s.c1 + 1; c <= s.c2; c++) {
+        if (typeof src === "string" && src.startsWith("=")) {
+          hf.setCellContents(addr(r, c), shiftFormula(src, 0, c - s.c1));
+        } else hf.setCellContents(addr(r, c), src ?? null);
+      }
+    }
+  });
+  paintAll();
+}
+/* shift relative refs in a formula by (dr, dc) — respects $ anchors */
+function shiftFormula(f, dr, dc) {
+  return f.replace(/(\$?)([A-Z]{1,3})(\$?)(\d{1,7})/g, (m, ac, col, ar, row) => {
+    let c = 0; for (const ch of col) c = c * 26 + (ch.charCodeAt(0) - 64);
+    c -= 1;
+    let r = parseInt(row, 10) - 1;
+    if (!ac) c += dc;
+    if (!ar) r += dr;
+    if (c < 0 || r < 0) return m;
+    return ac + colName(c) + ar + (r + 1);
+  });
+}
+
+function sortSelection(asc) {
+  const s = normSel();
+  if (s.r1 === s.r2) { alert("Select the rows you want to sort first (drag over a range)."); return; }
+  const rows = [];
+  for (let r = s.r1; r <= s.r2; r++) {
+    const row = [];
+    for (let c = s.c1; c <= s.c2; c++) row.push(hf.getCellSerialized(addr(r, c)) ?? null);
+    rows.push(row);
+  }
+  rows.sort((a, b) => {
+    const x = a[0], y = b[0];
+    if (x === null) return 1; if (y === null) return -1;
+    if (typeof x === "number" && typeof y === "number") return asc ? x - y : y - x;
+    return asc ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
+  });
+  hf.batch(() => {
+    rows.forEach((row, i) => row.forEach((v, j) =>
+      hf.setCellContents(addr(s.r1 + i, s.c1 + j), v)));
+  });
+  paintAll();
+}
+
+function findReplace() {
+  const find = prompt("Find what?");
+  if (!find) return;
+  const repl = prompt("Replace with?", "");
+  if (repl === null) return;
+  const dims = hf.getSheetDimensions(curSheet);
+  const changes = [];
+  for (let r = 0; r < dims.height; r++) for (let c = 0; c < dims.width; c++) {
+    const v = hf.getCellSerialized(addr(r, c));
+    if (typeof v === "string" && v.includes(find)) changes.push([r, c, v.split(find).join(repl)]);
+    else if (v !== null && v !== undefined && String(v) === find) changes.push([r, c, parseInput(repl)]);
+  }
+  hf.batch(() => changes.forEach(([r, c, v]) => hf.setCellContents(addr(r, c), v)));
+  paintAll();
+  alert(`Replaced in ${changes.length} cell(s).`);
+}
+
+/* ================= Pivot table automation ================= */
+/* Data range = selection if a real range is selected, else the sheet's used range */
+function getDataRange() {
+  const s = normSel();
+  if (s.r1 !== s.r2 || s.c1 !== s.c2) return s;
+  const d = hf.getSheetDimensions(curSheet);
+  if (d.height < 1 || d.width < 1) return null;
+  return { r1: 0, c1: 0, r2: d.height - 1, c2: d.width - 1 };
+}
+function headerLabel(rng, i) {
+  const d = displayValue(rng.r1, rng.c1 + i);
+  return d.text !== "" ? d.text : "Column " + colName(rng.c1 + i);
+}
+
+let pivotRange = null;
+function openPivot() {
+  const rng = getDataRange();
+  if (!rng || rng.r2 - rng.r1 < 1) { alert("Add some data first (a header row plus at least one data row), or select a data range."); return; }
+  pivotRange = rng;
+  $("pvRange").textContent = "Data: " + cellRef(rng.r1, rng.c1) + ":" + cellRef(rng.r2, rng.c2) + " (first row = headers)";
+  const nCols = rng.c2 - rng.c1 + 1;
+  const fill = (sel, extra) => {
+    sel.innerHTML = extra ? '<option value="">— none —</option>' : "";
+    for (let i = 0; i < nCols; i++) {
+      const o = document.createElement("option");
+      o.value = i; o.textContent = headerLabel(rng, i);
+      sel.appendChild(o);
+    }
+  };
+  fill($("pvRow"), false); fill($("pvCol"), true); fill($("pvVal"), false);
+  $("pvVal").value = nCols - 1;   // last column is usually the numbers
+  $("pivotmodal").classList.add("open");
+}
+$("pvCancel").onclick = () => $("pivotmodal").classList.remove("open");
+$("pivotmodal").onclick = e => { if (e.target === e.currentTarget) $("pivotmodal").classList.remove("open"); };
+
+function keyOf(r, c) {
+  const v = hf.getCellValue(addr(r, c));
+  if (v === null || v === undefined || v === "") return "(blank)";
+  if (typeof v === "object") return "(error)";
+  return String(v);
+}
+function newAcc() { return { sum: 0, count: 0, n: 0, min: Infinity, max: -Infinity }; }
+function accumulate(a, v) {
+  if (v !== null && v !== undefined && typeof v !== "object" && v !== "") a.count++;
+  if (typeof v === "number") { a.sum += v; a.n++; a.min = Math.min(a.min, v); a.max = Math.max(a.max, v); }
+}
+function finalize(a, agg) {
+  switch (agg) {
+    case "SUM": return a.n ? a.sum : null;
+    case "COUNT": return a.count;
+    case "AVERAGE": return a.n ? Math.round((a.sum / a.n) * 1e6) / 1e6 : null;
+    case "MIN": return a.n ? a.min : null;
+    case "MAX": return a.n ? a.max : null;
+  }
+}
+const smartCmp = (x, y) => {
+  const nx = parseFloat(x), ny = parseFloat(y);
+  if (!isNaN(nx) && !isNaN(ny)) return nx - ny;
+  return String(x).localeCompare(String(y));
+};
+
+function createPivot() {
+  buildPivotSheet(
+    pivotRange,
+    +$("pvRow").value,
+    $("pvCol").value === "" ? -1 : +$("pvCol").value,
+    +$("pvVal").value,
+    $("pvAgg").value
+  );
+  $("pivotmodal").classList.remove("open");
+}
+
+/* Core pivot engine — also used by ⚡ Auto Report.
+   Returns { lastRow } = index of the last data row on the new sheet (before Grand Total). */
+function buildPivotSheet(rng, ri, ci, vi, agg) {
+  const rowKeys = [], colKeys = [];
+  const cells = new Map(), rowTot = new Map(), colTot = new Map(), grand = newAcc();
+  for (let r = rng.r1 + 1; r <= rng.r2; r++) {
+    const rk = keyOf(r, rng.c1 + ri);
+    const ck = ci >= 0 ? keyOf(r, rng.c1 + ci) : "__v__";
+    const v = hf.getCellValue(addr(r, rng.c1 + vi));
+    if (!rowKeys.includes(rk)) rowKeys.push(rk);
+    if (ci >= 0 && !colKeys.includes(ck)) colKeys.push(ck);
+    const k = rk + "\u0000" + ck;
+    if (!cells.has(k)) cells.set(k, newAcc());
+    if (!rowTot.has(rk)) rowTot.set(rk, newAcc());
+    if (!colTot.has(ck)) colTot.set(ck, newAcc());
+    accumulate(cells.get(k), v); accumulate(rowTot.get(rk), v);
+    accumulate(colTot.get(ck), v); accumulate(grand, v);
+  }
+  rowKeys.sort(smartCmp); colKeys.sort(smartCmp);
+
+  const rowName = headerLabel(rng, ri), valName = headerLabel(rng, vi);
+  const colName2 = ci >= 0 ? headerLabel(rng, ci) : null;
+  const out = [];
+  out.push([`Pivot: ${agg} of ${valName} by ${rowName}` + (colName2 ? ` and ${colName2}` : "")]);
+  out.push([]);
+  if (ci >= 0) {
+    out.push([rowName, ...colKeys, "Grand Total"]);
+    rowKeys.forEach(rk => {
+      const row = [rk];
+      colKeys.forEach(ck => {
+        const a = cells.get(rk + "\u0000" + ck);
+        row.push(a ? finalize(a, agg) : null);
+      });
+      row.push(finalize(rowTot.get(rk), agg));
+      out.push(row);
+    });
+    out.push(["Grand Total", ...colKeys.map(ck => finalize(colTot.get(ck), agg)), finalize(grand, agg)]);
+  } else {
+    out.push([rowName, agg + " of " + valName]);
+    rowKeys.forEach(rk => out.push([rk, finalize(rowTot.get(rk), agg)]));
+    out.push(["Grand Total", finalize(grand, agg)]);
+  }
+
+  let i = 1;
+  while (hf.getSheetId("Pivot" + i) !== undefined) i++;
+  const name = hf.addSheet("Pivot" + i);
+  const sid = hf.getSheetId(name);
+  hf.setSheetContent(sid, out);
+  curSheet = sid;
+  ROWS = Math.max(ROWS, out.length + 20);
+  COLS = Math.max(COLS, (out[2] ? out[2].length : 2) + 5);
+  active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; anchor = { r: 0, c: 0 };
+  buildGrid(); renderTabs();
+  return { lastRow: rowKeys.length + 2 };
+}
+$("pvCreate").onclick = createPivot;
+
+/* ================= One-click Clean Data ================= */
+function cleanData(quiet) {
+  const rng = getDataRange();
+  if (!rng) { if (!quiet) alert("Nothing to clean — the sheet is empty."); return ""; }
+  let trimmed = 0, converted = 0, blankRows = 0, dupes = 0;
+
+  // read every cell (formulas kept verbatim)
+  const rows = [];
+  for (let r = rng.r1; r <= rng.r2; r++) {
+    const row = [];
+    for (let c = rng.c1; c <= rng.c2; c++) {
+      const f = hf.getCellFormula(addr(r, c));
+      if (f !== undefined && f !== null) { row.push(f); continue; }
+      let v = hf.getCellSerialized(addr(r, c));
+      if (typeof v === "string") {
+        const t = v.replace(/\s+/g, " ").trim();
+        if (t !== v) { trimmed++; v = t; }
+        if (v === "") v = null;
+        else {
+          const plain = v.replace(/,(?=\d{3}(\D|$))/g, "");  // strip 1,234 separators
+          if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(plain)) { v = parseFloat(plain); converted++; }
+        }
+      }
+      row.push(v === undefined ? null : v);
+    }
+    rows.push(row);
+  }
+
+  const isBlank = row => row.every(v => v === null);
+  const sig = row => JSON.stringify(row);
+
+  // keep header (first row) untouched in the dedupe/blank pass
+  const header = rows[0];
+  const seen = new Set();
+  const kept = [];
+  rows.slice(1).forEach(row => {
+    if (isBlank(row)) { blankRows++; return; }
+    const s = sig(row);
+    if (seen.has(s)) { dupes++; return; }
+    seen.add(s);
+    kept.push(row);
+  });
+  const result = [header, ...kept];
+
+  hf.batch(() => {
+    for (let r = rng.r1; r <= rng.r2; r++) {
+      const row = result[r - rng.r1];
+      for (let c = rng.c1; c <= rng.c2; c++) {
+        hf.setCellContents(addr(r, c), row ? (row[c - rng.c1] ?? null) : null);
+      }
+    }
+  });
+  paintAll();
+  const msg = `• ${trimmed} cell(s) trimmed / extra spaces removed\n• ${converted} text number(s) converted to real numbers\n• ${blankRows} blank row(s) removed\n• ${dupes} duplicate row(s) removed`;
+  if (!quiet) alert("🧹 Clean complete\n\n" + msg);
+  return msg;
+}
+
+$("btnPivot").onclick = openPivot;
+$("btnClean").onclick = () => cleanData(false);
+
+/* ================= Charts ================= */
+let chartObj = null, chartRange = null;
+function openChart() {
+  const s = normSel();
+  const rng = (s.r1 !== s.r2 || s.c1 !== s.c2) ? s : getDataRange();
+  if (!rng || rng.r2 === rng.r1) { alert("Select the data to chart first — labels in the first column, numbers in the next column(s)."); return; }
+  chartRange = rng;
+  $("chType").value = pickChartType(rng);
+  $("chRange").textContent = "Data: " + cellRef(rng.r1, rng.c1) + ":" + cellRef(rng.r2, rng.c2) +
+    "  ·  chart type picked automatically — change it below";
+  $("chartmodal").classList.add("open");
+  drawChart();
+}
+/* Auto-pick a sensible chart type from the shape of the data */
+function pickChartType(rng) {
+  const dataRows = rng.r2 - rng.r1;            // excluding header
+  const nSeries = rng.c1 === rng.c2 ? 1 : rng.c2 - rng.c1;
+  if (nSeries === 1 && dataRows <= 8) return "pie";   // few categories, one number → share of total
+  if (dataRows > 12) return "line";                    // long series → trend
+  return "bar";                                        // default comparison
+}
+function drawChart() {
+  const rng = chartRange, type = $("chType").value;
+  const single = rng.c1 === rng.c2;
+  const firstRow = [];
+  for (let c = rng.c1; c <= rng.c2; c++) firstRow.push(hf.getCellValue(addr(rng.r1, c)));
+  const hasHeader = firstRow.some(v => typeof v === "string");
+  const dataStart = rng.r1 + (hasHeader ? 1 : 0);
+  const nSeries = single ? 1 : rng.c2 - rng.c1;
+  const labels = [], series = [];
+  for (let i = 0; i < nSeries; i++) {
+    const h = single ? firstRow[0] : firstRow[i + 1];
+    series.push({ label: hasHeader && typeof h === "string" ? h : "Series " + (i + 1), data: [] });
+  }
+  for (let r = dataStart; r <= rng.r2; r++) {
+    if (single) {
+      labels.push("Row " + (r + 1));
+      const v = hf.getCellValue(addr(r, rng.c1));
+      series[0].data.push(typeof v === "number" ? v : null);
+    } else {
+      const lab = hf.getCellValue(addr(r, rng.c1));
+      labels.push(lab === null || lab === undefined || typeof lab === "object" ? "Row " + (r + 1) : String(lab));
+      for (let i = 0; i < nSeries; i++) {
+        const v = hf.getCellValue(addr(r, rng.c1 + 1 + i));
+        series[i].data.push(typeof v === "number" ? v : null);
+      }
+    }
+  }
+  const palette = ["#217346", "#2b6cb0", "#c0392b", "#e67e22", "#8e44ad", "#16a085", "#f1c40f", "#7f8c8d"];
+  const isPie = type === "pie" || type === "doughnut";
+  if (chartObj) chartObj.destroy();
+  chartObj = new Chart($("chCanvas"), {
+    type,
+    data: {
+      labels,
+      datasets: series.map((sr, i) => ({
+        label: sr.label, data: sr.data,
+        backgroundColor: isPie ? palette : palette[i % palette.length] + "cc",
+        borderColor: palette[i % palette.length],
+        fill: false
+      }))
+    },
+    options: { responsive: false, animation: false }
+  });
+}
+$("chType").onchange = drawChart;
+$("chDownload").onclick = () => {
+  const a = document.createElement("a");
+  a.href = $("chCanvas").toDataURL("image/png");
+  a.download = "chart.png";
+  a.click();
+};
+$("chClose").onclick = () => $("chartmodal").classList.remove("open");
+$("chartmodal").onclick = e => { if (e.target === e.currentTarget) $("chartmodal").classList.remove("open"); };
+
+/* ================= Conditional formatting (highlight rules) ================= */
+let cfRules = [], cfTarget = null;
+const CF_COLORS = { red: "#f8cbcb", yellow: "#f9e79f", green: "#c8e6c9", blue: "#bbdefb", orange: "#ffd9b3" };
+
+function openCF() {
+  const s = normSel();
+  const rng = (s.r1 !== s.r2 || s.c1 !== s.c2) ? s : getDataRange();
+  if (!rng) { alert("Add some data first."); return; }
+  cfTarget = rng;
+  $("cfRange").textContent = "Range: " + cellRef(rng.r1, rng.c1) + ":" + cellRef(rng.r2, rng.c2) +
+    "  ·  active rules here: " + cfRules.filter(x => x.sheet === curSheet).length;
+  $("cfmodal").classList.add("open");
+}
+$("cfType").onchange = () => {
+  const noValue = ["dup", "top", "blank"].includes($("cfType").value);
+  $("cfValue").style.display = noValue ? "none" : "";
+  $("cfValueLabel").style.display = noValue ? "none" : "";
+};
+$("cfApply").onclick = () => {
+  cfRules.push({
+    sheet: curSheet, r1: cfTarget.r1, c1: cfTarget.c1, r2: cfTarget.r2, c2: cfTarget.c2,
+    type: $("cfType").value, value: $("cfValue").value, color: $("cfColor").value
+  });
+  $("cfmodal").classList.remove("open");
+  paintAll();
+};
+$("cfClearAll").onclick = () => {
+  cfRules = cfRules.filter(x => x.sheet !== curSheet);
+  $("cfmodal").classList.remove("open");
+  paintAll();
+};
+$("cfCancel").onclick = () => $("cfmodal").classList.remove("open");
+$("cfmodal").onclick = e => { if (e.target === e.currentTarget) $("cfmodal").classList.remove("open"); };
+
+function forRange(rule, fn) {
+  const rMax = Math.min(rule.r2, ROWS - 1), cMax = Math.min(rule.c2, COLS - 1);
+  for (let r = rule.r1; r <= rMax; r++)
+    for (let c = rule.c1; c <= cMax; c++)
+      fn(r, c, hf.getCellValue(addr(r, c)));
+}
+function computeCfMap() {
+  const rules = cfRules.filter(x => x.sheet === curSheet);
+  if (!rules.length) return null;
+  const map = new Map();
+  rules.forEach(rule => {
+    const color = CF_COLORS[rule.color] || CF_COLORS.yellow;
+    let dupCounts = null, topMin = null;
+    if (rule.type === "dup") {
+      dupCounts = new Map();
+      forRange(rule, (r, c, v) => {
+        if (v !== null && v !== undefined && v !== "" && typeof v !== "object") {
+          const k = String(v);
+          dupCounts.set(k, (dupCounts.get(k) || 0) + 1);
+        }
+      });
+    }
+    if (rule.type === "top") {
+      const nums = [];
+      forRange(rule, (r, c, v) => { if (typeof v === "number") nums.push(v); });
+      nums.sort((a, b) => b - a);
+      topMin = nums.length ? nums[Math.min(9, nums.length - 1)] : null;
+    }
+    const num = parseFloat(rule.value);
+    forRange(rule, (r, c, v) => {
+      let hit = false;
+      switch (rule.type) {
+        case "gt": hit = typeof v === "number" && v > num; break;
+        case "lt": hit = typeof v === "number" && v < num; break;
+        case "eq": hit = v !== null && v !== undefined && typeof v !== "object" && String(v).toLowerCase() === String(rule.value).toLowerCase(); break;
+        case "contains": hit = typeof v === "string" && v.toLowerCase().includes(String(rule.value).toLowerCase()); break;
+        case "dup": hit = v !== null && v !== undefined && v !== "" && typeof v !== "object" && dupCounts.get(String(v)) > 1; break;
+        case "top": hit = topMin !== null && typeof v === "number" && v >= topMin; break;
+        case "blank": hit = v === null || v === undefined || v === ""; break;
+      }
+      if (hit) map.set(r + "," + c, color);
+    });
+  });
+  return map;
+}
+
+/* ================= Row filter ================= */
+function buildFilterTest(cond) {
+  cond = cond.trim();
+  const m = /^(>=|<=|<>|>|<|=)\s*(.*)$/.exec(cond);
+  if (m) {
+    const op = m[1], raw = m[2].trim(), num = parseFloat(raw);
+    return v => {
+      if (op === "=") return v !== null && v !== undefined && String(v).toLowerCase() === raw.toLowerCase();
+      if (op === "<>") return String(v ?? "").toLowerCase() !== raw.toLowerCase();
+      if (typeof v !== "number" || isNaN(num)) return false;
+      if (op === ">") return v > num;
+      if (op === "<") return v < num;
+      if (op === ">=") return v >= num;
+      return v <= num;
+    };
+  }
+  return v => String(v ?? "").toLowerCase().includes(cond.toLowerCase());
+}
+function filterRows() {
+  const letter = colName(active.c);
+  const cond = prompt(
+    "Show only rows where column " + letter + " matches…\n\n" +
+    "Examples:   >100      <=50      =South      <>0      west  (contains)");
+  if (!cond) return;
+  const test = buildFilterTest(cond);
+  const dims = hf.getSheetDimensions(curSheet);
+  let shown = 0, hidden = 0;
+  for (let r = 1; r < Math.min(dims.height, ROWS); r++) {
+    const ok = test(hf.getCellValue(addr(r, active.c)));
+    tbody.rows[r].style.display = ok ? "" : "none";
+    ok ? shown++ : hidden++;
+  }
+  alert("Filter on column " + letter + ": showing " + shown + " row(s), hiding " + hidden +
+    ".\nRow 1 stays visible as the header. Click ⊘ Show All to remove the filter.\n(Hidden rows are only hidden on screen — saving still exports everything.)");
+}
+function clearFilter() {
+  for (const tr of tbody.rows) tr.style.display = "";
+}
+
+/* ================= Text to Columns ================= */
+function splitColumn() {
+  const s = normSel();
+  const c = active.c;
+  const rng = (s.r1 !== s.r2) ? s : getDataRange();
+  if (!rng) { alert("Nothing to split."); return; }
+  const delim = prompt("Split column " + colName(c) + " into columns — by which separator?\n(e.g. ,  ;  -  or a space)", ",");
+  if (delim === null || delim === "") return;
+  // read first, write in one batch (reading is not allowed inside batch())
+  const jobs = [];
+  for (let r = rng.r1; r <= rng.r2; r++) {
+    const v = hf.getCellValue(addr(r, c));
+    if (typeof v === "string" && v.includes(delim)) jobs.push([r, v.split(delim)]);
+  }
+  if (!jobs.length) { alert("No cell in column " + colName(c) + " contains \"" + delim + "\" — nothing was split."); return; }
+  hf.batch(() => {
+    jobs.forEach(([r, parts]) => parts.forEach((part, i) => {
+      if (c + i < COLS) setCell(r, c + i, part.trim());
+    }));
+  });
+  paintAll();
+}
+
+/* ================= Merge multiple files ================= */
+function addWorkbookSheets(wb, base, combined) {
+  wb.SheetNames.forEach(sn => {
+    const ws = wb.Sheets[sn];
+    let nm = (wb.SheetNames.length > 1 ? base + "-" + sn : base).slice(0, 28);
+    let i = 1, unique = nm;
+    while (hf.getSheetId(unique) !== undefined) unique = nm + "_" + (i++);
+    const added = hf.addSheet(unique);
+    const arr = wsToArray(ws, false);
+    if (arr.length) hf.setSheetContent(hf.getSheetId(added), arr);
+    const vals = wsToArray(ws, true);
+    if (vals.length) combined.push(combined.length ? vals.slice(1) : vals);
+  });
+}
+$("mergeInput").addEventListener("change", async e => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  const combined = [];
+  try {
+    for (const file of files) {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array", cellFormula: true });
+      addWorkbookSheets(wb, file.name.replace(/\.[^.]+$/, "").slice(0, 20), combined);
+    }
+  } catch (err) { alert("Could not read a file: " + err.message); }
+  if (combined.length &&
+      confirm("Added " + files.length + " file(s) as new sheet tabs. ✔\n\nAlso stack all their rows into ONE 'Combined' sheet?\n(The first row is kept once as the header.)")) {
+    const rows = combined.flat();
+    let nm = "Combined", i = 1;
+    while (hf.getSheetId(nm) !== undefined) nm = "Combined" + (i++);
+    const added = hf.addSheet(nm);
+    hf.setSheetContent(hf.getSheetId(added), rows);
+    curSheet = hf.getSheetId(added);
+    ROWS = Math.max(ROWS, Math.min(rows.length + 20, 2000));
+  }
+  renderTabs(); buildGrid();
+  e.target.value = "";
+});
+
+/* ================= One-click column analysis ================= */
+function analyzeSheet() {
+  const rng = getDataRange();
+  if (!rng || rng.r2 === rng.r1) { alert("Add some data first (a header row plus data rows)."); return; }
+  const nCols = rng.c2 - rng.c1 + 1;
+  const out = [
+    ["Column analysis of '" + hf.getSheetName(curSheet) + "'"],
+    [],
+    ["Metric", ...Array.from({ length: nCols }, (_, i) => headerLabel(rng, i))]
+  ];
+  const metrics = {
+    "Filled cells": [], "Numbers": [], "Blanks": [], "Distinct values": [],
+    "Sum": [], "Average": [], "Min": [], "Max": []
+  };
+  for (let i = 0; i < nCols; i++) {
+    let filled = 0, nums = 0, blanks = 0, sum = 0, min = Infinity, max = -Infinity;
+    const distinct = new Set();
+    for (let r = rng.r1 + 1; r <= rng.r2; r++) {
+      const v = hf.getCellValue(addr(r, rng.c1 + i));
+      if (v === null || v === undefined || v === "") { blanks++; continue; }
+      filled++;
+      distinct.add(typeof v === "object" ? "(error)" : String(v));
+      if (typeof v === "number") { nums++; sum += v; min = Math.min(min, v); max = Math.max(max, v); }
+    }
+    metrics["Filled cells"].push(filled);
+    metrics["Numbers"].push(nums);
+    metrics["Blanks"].push(blanks);
+    metrics["Distinct values"].push(distinct.size);
+    metrics["Sum"].push(nums ? Math.round(sum * 100) / 100 : null);
+    metrics["Average"].push(nums ? Math.round((sum / nums) * 100) / 100 : null);
+    metrics["Min"].push(nums ? min : null);
+    metrics["Max"].push(nums ? max : null);
+  }
+  Object.entries(metrics).forEach(([k, vals]) => out.push([k, ...vals]));
+  let nm = "Analysis", i = 1;
+  while (hf.getSheetId(nm) !== undefined) nm = "Analysis" + (i++);
+  const added = hf.addSheet(nm);
+  const sid = hf.getSheetId(added);
+  hf.setSheetContent(sid, out);
+  curSheet = sid;
+  COLS = Math.max(COLS, nCols + 4);
+  active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; anchor = { r: 0, c: 0 };
+  buildGrid(); renderTabs();
+}
+
+/* ================= ⚡ Auto Report — one click does everything ================= */
+/* Guess which column holds the labels (first mostly-text column)
+   and which holds the numbers to total (last mostly-numeric column). */
+function detectColumns(rng) {
+  const nCols = rng.c2 - rng.c1 + 1;
+  let firstText = -1, lastNum = -1;
+  for (let i = 0; i < nCols; i++) {
+    let nums = 0, texts = 0;
+    const rMax = Math.min(rng.r2, rng.r1 + 50);
+    for (let r = rng.r1 + 1; r <= rMax; r++) {
+      const v = hf.getCellValue(addr(r, rng.c1 + i));
+      if (typeof v === "number") nums++;
+      else if (typeof v === "string" && v !== "") texts++;
+    }
+    if (texts > nums && firstText === -1) firstText = i;
+    if (nums > texts) lastNum = i;
+  }
+  return {
+    rowField: firstText === -1 ? 0 : firstText,
+    valField: lastNum === -1 ? nCols - 1 : lastNum
+  };
+}
+
+function autoReport() {
+  const srcSheet = curSheet;
+  sel = { r1: 0, c1: 0, r2: 0, c2: 0 };      // single cell → use the whole used range
+  let rng = getDataRange();
+  if (!rng || rng.r2 === rng.r1) { alert("Add a table first — a header row plus at least one data row — then click ⚡ Auto Report."); return; }
+
+  // 1. clean
+  const cleanMsg = cleanData(true);
+
+  // recompute the range and drop rows emptied by the cleanup
+  rng = getDataRange();
+  const rowEmpty = r => {
+    for (let c = rng.c1; c <= rng.c2; c++) {
+      const v = hf.getCellValue(addr(r, c));
+      if (v !== null && v !== undefined && v !== "") return false;
+    }
+    return true;
+  };
+  while (rng.r2 > rng.r1 && rowEmpty(rng.r2)) rng.r2--;
+
+  // 2. pick fields while we are still on the source sheet
+  const { rowField, valField } = detectColumns(rng);
+  const rowName = headerLabel(rng, rowField), valName = headerLabel(rng, valField);
+
+  // 3. analysis sheet
+  analyzeSheet();
+  const analysisName = hf.getSheetName(curSheet);
+
+  // 4. pivot sheet (SUM of the numeric column, grouped by the text column)
+  curSheet = srcSheet;
+  const info = buildPivotSheet(rng, rowField, -1, valField, "SUM");
+  const pivotName = hf.getSheetName(curSheet);
+
+  alert("⚡ Auto Report ready!\n\n1. Cleaned the data:\n" + cleanMsg +
+    "\n\n2. '" + analysisName + "' sheet — statistics for every column" +
+    "\n3. '" + pivotName + "' sheet — SUM of " + valName + " by " + rowName +
+    "\n4. Chart opening now — you can change its type or download it as PNG.");
+
+  // 5. chart the pivot result (skip the Grand Total row)
+  sel = { r1: 2, c1: 0, r2: info.lastRow, c2: 1 };
+  active = { r: 2, c: 0 };
+  paintAll();
+  openChart();
+}
+$("btnAuto").onclick = autoReport;
+
+$("btnChart").onclick = openChart;
+$("btnCF").onclick = openCF;
+$("btnFilter").onclick = filterRows;
+$("btnUnfilter").onclick = clearFilter;
+$("btnSplit").onclick = splitColumn;
+$("btnAnalyze").onclick = analyzeSheet;
+
+$("btnNew").onclick = () => { if (confirm("Start a new blank workbook? Unsaved changes will be lost.")) resetWorkbook(); };
+$("btnUndo").onclick = doUndo;
+$("btnRedo").onclick = doRedo;
+$("btnClear").onclick = clearSelection;
+$("btnSum").onclick = autoSum;
+$("btnFillD").onclick = fillDown;
+$("btnFillR").onclick = fillRight;
+$("btnSortA").onclick = () => sortSelection(true);
+$("btnSortD").onclick = () => sortSelection(false);
+$("btnFind").onclick = findReplace;
+$("btnMoreRows").onclick = () => {
+  const n = parseInt(prompt("How many rows do you want to add?", "50"), 10);
+  if (!n || n < 1) return;
+  ROWS = Math.min(ROWS + n, 5000);
+  buildGrid();
+};
+$("btnMoreCols").onclick = () => {
+  const n = parseInt(prompt("How many columns do you want to add?", "10"), 10);
+  if (!n || n < 1) return;
+  COLS = Math.min(COLS + n, 260);
+  buildGrid();
+};
+
+/* ================= Sheets ================= */
+function renderTabs() {
+  const tabs = $("sheettabs");
+  tabs.innerHTML = "";
+  hf.getSheetNames().forEach(name => {
+    const id = hf.getSheetId(name);
+    const div = document.createElement("div");
+    div.className = "sheettab" + (id === curSheet ? " cur" : "");
+    div.textContent = name;
+    div.onclick = () => { curSheet = id; active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; renderTabs(); paintAll(); };
+    div.ondblclick = () => {
+      const nn = prompt("Rename sheet:", name);
+      if (nn && nn !== name) { try { hf.renameSheet(id, nn); renderTabs(); } catch (e) { alert(e.message); } }
+    };
+    tabs.appendChild(div);
+  });
+}
+$("addsheet").onclick = () => {
+  const name = hf.addSheet();
+  curSheet = hf.getSheetId(name);
+  renderTabs(); paintAll();
+};
+
+function resetWorkbook() {
+  hf.destroy();
+  hf = HyperFormula.buildEmpty({ licenseKey: "gpl-v3" });
+  hf.addSheet("Sheet1");
+  curSheet = hf.getSheetId("Sheet1");
+  ROWS = 100; COLS = 26;
+  active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; anchor = { r: 0, c: 0 };
+  buildGrid(); renderTabs();
+}
+
+/* ================= Open / Save ================= */
+$("fileInput").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try { loadWorkbook(XLSX.read(ev.target.result, { type: "array", cellFormula: true })); }
+    catch (err) { alert("Could not open file: " + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = "";
+});
+
+/* Read a SheetJS worksheet into a 2D array.
+   useValues=false keeps formulas ("=…"); useValues=true takes calculated values only. */
+function wsToArray(ws, useValues) {
+  if (!ws["!ref"]) return [];
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  const data = [];
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (!cell) { row.push(null); continue; }
+      if (!useValues && cell.f) row.push(fixBooleans("=" + cell.f));
+      else if (cell.v === undefined) row.push(null);
+      else row.push(cell.v);
+    }
+    data.push(row);
+  }
+  return data;
+}
+
+function loadWorkbook(wb) {
+  hf.destroy();
+  hf = HyperFormula.buildEmpty({ licenseKey: "gpl-v3" });
+  let maxR = 100, maxC = 26;
+  wb.SheetNames.forEach(name => {
+    const ws = wb.Sheets[name];
+    const sheetName = hf.addSheet(name);
+    const sid = hf.getSheetId(sheetName);
+    const data = wsToArray(ws, false);
+    if (!data.length) return;
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    maxR = Math.max(maxR, range.e.r + 20);
+    maxC = Math.max(maxC, range.e.c + 5);
+    try { hf.setSheetContent(sid, data); }
+    catch (err) { console.warn("Sheet " + name + ": " + err.message); }
+  });
+  if (hf.getSheetNames().length === 0) hf.addSheet("Sheet1");
+  curSheet = hf.getSheetId(hf.getSheetNames()[0]);
+  ROWS = Math.min(maxR, 1000); COLS = Math.min(maxC, 104);
+  active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 };
+  buildGrid(); renderTabs();
+}
+
+function saveXlsx() {
+  const wb = XLSX.utils.book_new();
+  hf.getSheetNames().forEach(name => {
+    const sid = hf.getSheetId(name);
+    const dims = hf.getSheetDimensions(sid);
+    const ws = {};
+    let maxR = 0, maxC = 0;
+    for (let r = 0; r < dims.height; r++) for (let c = 0; c < dims.width; c++) {
+      const a = { sheet: sid, row: r, col: c };
+      const f = hf.getCellFormula(a);
+      const v = hf.getCellValue(a);
+      if ((f === undefined || f === null) && (v === null || v === undefined)) continue;
+      const ref = XLSX.utils.encode_cell({ r, c });
+      const cell = {};
+      if (f) cell.f = f.slice(1);
+      if (typeof v === "number") { cell.t = "n"; cell.v = v; }
+      else if (typeof v === "boolean") { cell.t = "b"; cell.v = v; }
+      else if (v !== null && v !== undefined && typeof v !== "object") { cell.t = "s"; cell.v = String(v); }
+      else if (f) { cell.t = "s"; cell.v = ""; }
+      ws[ref] = cell;
+      maxR = Math.max(maxR, r); maxC = Math.max(maxC, c);
+    }
+    ws["!ref"] = "A1:" + XLSX.utils.encode_cell({ r: maxR, c: maxC });
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  });
+  XLSX.writeFile(wb, "workbook.xlsx");
+}
+$("btnSaveX").onclick = saveXlsx;
+
+$("btnSaveC").onclick = () => {
+  const dims = hf.getSheetDimensions(curSheet);
+  const lines = [];
+  for (let r = 0; r < dims.height; r++) {
+    const row = [];
+    for (let c = 0; c < dims.width; c++) {
+      const d = displayValue(r, c);
+      row.push(/[",\n]/.test(d.text) ? '"' + d.text.replace(/"/g, '""') + '"' : d.text);
+    }
+    lines.push(row.join(","));
+  }
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = hf.getSheetName(curSheet) + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+/* ================= Formula bar live edit ================= */
+fx.addEventListener("focus", () => { /* editing via fx bar */ });
+
+/* ================= Function help data =================
+   [arguments, what it does, worked example]                */
+const FN_HELP = {
+  SUM: ["number1, [number2], …", "Adds all the numbers together.", "=SUM(5,10,15)"],
+  SUMIF: ["range, criteria, [sum_range]", "Adds only the cells that meet a condition.", '=SUMIF(B2:B4,">6",D2:D4)'],
+  SUMIFS: ["sum_range, criteria_range1, criteria1, …", "Adds cells that meet several conditions at once.", '=SUMIFS(D2:D4,B2:B4,">6",C2:C4,"<5")'],
+  SUMPRODUCT: ["array1, [array2], …", "Multiplies matching cells of the ranges, then adds the results. Great for weighted totals.", "=SUMPRODUCT(B2:B4,C2:C4)"],
+  PRODUCT: ["number1, [number2], …", "Multiplies all the numbers.", "=PRODUCT(2,3,4)"],
+  ABS: ["number", "Removes the minus sign — the distance from zero.", "=ABS(-7.5)"],
+  ROUND: ["number, digits", "Rounds to the given number of decimal places.", "=ROUND(3.14159,2)"],
+  ROUNDUP: ["number, digits", "Always rounds away from zero.", "=ROUNDUP(2.11,1)"],
+  ROUNDDOWN: ["number, digits", "Always rounds towards zero.", "=ROUNDDOWN(2.99,1)"],
+  INT: ["number", "Rounds down to the nearest whole number.", "=INT(8.9)"],
+  TRUNC: ["number, [digits]", "Cuts off decimals without rounding.", "=TRUNC(8.97,1)"],
+  MOD: ["number, divisor", "The remainder after division.", "=MOD(10,3)"],
+  POWER: ["number, power", "Raises a number to a power.", "=POWER(2,10)"],
+  SQRT: ["number", "Square root.", "=SQRT(144)"],
+  EXP: ["number", "e raised to the given power.", "=EXP(1)"],
+  LN: ["number", "Natural logarithm.", "=LN(10)"],
+  LOG: ["number, [base]", "Logarithm in any base (default 10).", "=LOG(8,2)"],
+  LOG10: ["number", "Base-10 logarithm.", "=LOG10(1000)"],
+  RAND: ["", "Random number between 0 and 1 (changes on every recalculation).", "=RAND()"],
+  RANDBETWEEN: ["low, high", "Random whole number in a range.", "=RANDBETWEEN(1,100)"],
+  PI: ["", "The value of π.", "=PI()"],
+  SIGN: ["number", "1 for positive, -1 for negative, 0 for zero.", "=SIGN(-25)"],
+  CEILING: ["number, significance", "Rounds up to the nearest multiple.", "=CEILING(23,5)"],
+  FLOOR: ["number, significance", "Rounds down to the nearest multiple.", "=FLOOR(23,5)"],
+  GCD: ["number1, number2, …", "Greatest common divisor.", "=GCD(24,36)"],
+  LCM: ["number1, number2, …", "Least common multiple.", "=LCM(4,6)"],
+  FACT: ["number", "Factorial (5! = 5×4×3×2×1).", "=FACT(5)"],
+  QUOTIENT: ["numerator, denominator", "Whole-number part of a division.", "=QUOTIENT(10,3)"],
+  SIN: ["radians", "Sine of an angle in radians.", "=SIN(PI()/2)"],
+  COS: ["radians", "Cosine of an angle in radians.", "=COS(0)"],
+  TAN: ["radians", "Tangent of an angle in radians.", "=TAN(PI()/4)"],
+  DEGREES: ["radians", "Converts radians to degrees.", "=DEGREES(PI())"],
+  RADIANS: ["degrees", "Converts degrees to radians.", "=RADIANS(180)"],
+
+  AVERAGE: ["number1, [number2], …", "The mean — sum divided by count.", "=AVERAGE(C2:C4)"],
+  AVERAGEIF: ["range, criteria, [avg_range]", "Average of only the cells that meet a condition.", '=AVERAGEIF(B2:B4,">6")'],
+  AVERAGEIFS: ["avg_range, crit_range1, criteria1, …", "Average with several conditions.", '=AVERAGEIFS(D2:D4,B2:B4,">6")'],
+  COUNT: ["value1, [value2], …", "Counts how many cells contain numbers.", "=COUNT(A1:D5)"],
+  COUNTA: ["value1, [value2], …", "Counts non-empty cells (numbers and text).", "=COUNTA(A1:D5)"],
+  COUNTBLANK: ["range", "Counts empty cells.", "=COUNTBLANK(A1:D5)"],
+  COUNTIF: ["range, criteria", "Counts cells that meet a condition.", '=COUNTIF(B2:B4,">6")'],
+  COUNTIFS: ["range1, criteria1, [range2, criteria2], …", "Counts with several conditions.", '=COUNTIFS(B2:B4,">4",C2:C4,"<5")'],
+  MAX: ["number1, [number2], …", "The largest value.", "=MAX(D2:D4)"],
+  MIN: ["number1, [number2], …", "The smallest value.", "=MIN(D2:D4)"],
+  MEDIAN: ["number1, [number2], …", "The middle value.", "=MEDIAN(1,2,3,4,100)"],
+  "STDEV.S": ["number1, [number2], …", "Standard deviation of a sample — how spread out the values are.", "=STDEV.S(2,4,4,4,5,5,7,9)"],
+  "STDEV.P": ["number1, [number2], …", "Standard deviation of an entire population.", "=STDEV.P(2,4,4,4,5,5,7,9)"],
+  "VAR.S": ["number1, [number2], …", "Variance of a sample.", "=VAR.S(2,4,4,4,5,5,7,9)"],
+  "VAR.P": ["number1, [number2], …", "Variance of a population.", "=VAR.P(2,4,4,4,5,5,7,9)"],
+  RANK: ["number, ref, [order]", "Position of a number within a list.", "=RANK(3.5,C2:C4)"],
+  LARGE: ["range, k", "The k-th largest value.", "=LARGE(D2:D4,2)"],
+  SMALL: ["range, k", "The k-th smallest value.", "=SMALL(D2:D4,1)"],
+
+  IF: ["condition, value_if_true, value_if_false", "Returns one value when the condition is true, another when false.", '=IF(D5>100,"BIG","small")'],
+  IFS: ["condition1, value1, [condition2, value2], …", "Checks conditions in order and returns the first match.", '=IFS(D5>1000,"huge",D5>100,"big",TRUE,"small")'],
+  AND: ["logical1, [logical2], …", "TRUE only if every condition is true.", "=AND(5>1,10>2)"],
+  OR: ["logical1, [logical2], …", "TRUE if at least one condition is true.", "=OR(5<1,10>2)"],
+  NOT: ["logical", "Flips TRUE to FALSE and back.", "=NOT(5>10)"],
+  XOR: ["logical1, [logical2], …", "TRUE if an odd number of conditions are true.", "=XOR(TRUE,FALSE)"],
+  IFERROR: ["value, value_if_error", "Replaces an error result with something friendlier.", '=IFERROR(1/0,"oops")'],
+  IFNA: ["value, value_if_na", "Replaces only #N/A errors.", '=IFNA(NA(),"not found")'],
+  SWITCH: ["value, match1, result1, …, [default]", "Compares a value against a list and returns the matching result.", '=SWITCH(2,1,"one",2,"two","other")'],
+  TRUE: ["", "The logical value TRUE.", "=TRUE()"],
+  FALSE: ["", "The logical value FALSE.", "=FALSE()"],
+
+  VLOOKUP: ["lookup_value, table, col_number, [exact]", "Finds a value in the first column of a table and returns a value from another column of the same row. Use FALSE for exact match.", '=VLOOKUP("Bananas",A2:D4,4,FALSE)'],
+  HLOOKUP: ["lookup_value, table, row_number, [exact]", "Like VLOOKUP but searches across the first row.", '=HLOOKUP("Qty",A1:D4,2,FALSE)'],
+  XLOOKUP: ["lookup_value, lookup_range, return_range, [if_not_found]", "The modern lookup: search one range, return from another, with a friendly fallback.", '=XLOOKUP("Cherries",A2:A4,D2:D4,"missing")'],
+  INDEX: ["range, row, [column]", "Returns the cell at a given position inside a range.", "=INDEX(D2:D4,2)"],
+  MATCH: ["lookup_value, range, [match_type]", "Returns the position of a value in a range (use 0 for exact). Pair with INDEX.", '=MATCH("Bananas",A2:A4,0)'],
+  CHOOSE: ["index, value1, [value2], …", "Picks the n-th value from a list.", '=CHOOSE(2,"red","green","blue")'],
+  OFFSET: ["reference, rows, cols, [height], [width]", "A reference shifted from a starting cell.", "=OFFSET(A1,1,3)"],
+  ADDRESS: ["row, column", "Builds a cell address as text.", "=ADDRESS(2,4)"],
+  ROW: ["[reference]", "The row number of a reference.", "=ROW(D5)"],
+  COLUMN: ["[reference]", "The column number of a reference.", "=COLUMN(D5)"],
+  ROWS: ["range", "How many rows a range has.", "=ROWS(A2:A10)"],
+  COLUMNS: ["range", "How many columns a range has.", "=COLUMNS(A1:D1)"],
+  TRANSPOSE: ["range", "Flips rows and columns.", "=INDEX(TRANSPOSE(A1:D1),2)"],
+
+  CONCATENATE: ["text1, [text2], …", "Joins pieces of text together (you can also use &).", '=CONCATENATE("Ex","chel")'],
+  LEFT: ["text, [count]", "The first characters of a text.", '=LEFT("Spreadsheet",6)'],
+  RIGHT: ["text, [count]", "The last characters of a text.", '=RIGHT("Spreadsheet",5)'],
+  MID: ["text, start, count", "Characters from the middle of a text.", '=MID("Spreadsheet",7,5)'],
+  LEN: ["text", "How many characters a text has.", '=LEN("hello")'],
+  LOWER: ["text", "All lowercase.", '=LOWER("HELLO")'],
+  UPPER: ["text", "ALL UPPERCASE.", '=UPPER("hello")'],
+  PROPER: ["text", "First Letter Of Each Word Capitalised.", '=PROPER("john smith")'],
+  TRIM: ["text", "Removes extra spaces.", '=TRIM("  too   many  spaces  ")'],
+  SUBSTITUTE: ["text, old, new, [instance]", "Replaces text by content.", '=SUBSTITUTE("2025-01-31","-","/")'],
+  REPLACE: ["text, start, count, new", "Replaces text by position.", '=REPLACE("Jonathan",5,4,"")'],
+  FIND: ["find_text, within_text, [start]", "Position of one text inside another (case-sensitive).", '=FIND("sheet","Spreadsheet")'],
+  SEARCH: ["find_text, within_text, [start]", "Like FIND but not case-sensitive and allows ? * wildcards.", '=SEARCH("SHEET","Spreadsheet")'],
+  TEXT: ["value, format", "Formats a number as text.", '=TEXT(1234.5,"0.00")'],
+  VALUE: ["text", "Converts number-looking text into a real number.", '=VALUE("42")'],
+  REPT: ["text, count", "Repeats text n times.", '=REPT("ab",3)'],
+  EXACT: ["text1, text2", "TRUE if two texts are exactly the same (case matters).", '=EXACT("Excel","excel")'],
+  CHAR: ["number", "The character for a character code.", "=CHAR(65)"],
+  CODE: ["text", "The character code of the first character.", '=CODE("A")'],
+  CLEAN: ["text", "Removes non-printable characters.", '=CLEAN("hello")'],
+
+  DATE: ["year, month, day", "Builds a date. Dates are stored as serial numbers — format or use with other date functions.", "=DATE(2026,7,3)"],
+  DATEVALUE: ["date_text", "Converts a date written as text into a date serial number.", '=DATEVALUE("03/07/2026")'],
+  DAY: ["date", "The day of the month (1-31).", "=DAY(DATE(2026,7,3))"],
+  MONTH: ["date", "The month (1-12).", "=MONTH(DATE(2026,7,3))"],
+  YEAR: ["date", "The year.", "=YEAR(DATE(2026,7,3))"],
+  TODAY: ["", "Today's date.", "=YEAR(TODAY())"],
+  NOW: ["", "Current date and time.", "=NOW()"],
+  HOUR: ["time", "The hour (0-23).", "=HOUR(TIME(14,30,0))"],
+  MINUTE: ["time", "The minutes (0-59).", "=MINUTE(TIME(14,30,0))"],
+  SECOND: ["time", "The seconds (0-59).", "=SECOND(TIME(14,30,45))"],
+  TIME: ["hour, minute, second", "Builds a time value.", "=TIME(14,30,0)*24"],
+  WEEKDAY: ["date, [type]", "Day of the week as a number (1 = Sunday by default).", "=WEEKDAY(DATE(2026,7,3))"],
+  WEEKNUM: ["date, [type]", "Week number of the year.", "=WEEKNUM(DATE(2026,7,3))"],
+  EOMONTH: ["date, months", "Last day of a month, n months away. Great for due dates.", "=DAY(EOMONTH(DATE(2026,2,1),0))"],
+  EDATE: ["date, months", "The same day, n months later or earlier.", "=MONTH(EDATE(DATE(2026,1,15),3))"],
+  DATEDIF: ["start, end, unit", 'Difference between dates: "Y" years, "M" months, "D" days.', '=DATEDIF(DATE(2020,1,1),DATE(2026,7,3),"Y")'],
+  NETWORKDAYS: ["start, end, [holidays]", "Working days (Mon-Fri) between two dates.", "=NETWORKDAYS(DATE(2026,7,1),DATE(2026,7,31))"],
+  WORKDAY: ["start, days, [holidays]", "The date n working days from a start date.", "=DAY(WORKDAY(DATE(2026,7,3),10))"],
+  DAYS: ["end, start", "Number of days between two dates.", "=DAYS(DATE(2026,12,31),DATE(2026,1,1))"],
+
+  PMT: ["rate, nper, pv", "Loan payment per period. Example: ₹5,00,000 loan, 12% yearly (1% monthly), 60 months.", "=PMT(0.01,60,500000)"],
+  IPMT: ["rate, period, nper, pv", "The interest part of a specific loan payment.", "=IPMT(0.01,1,60,500000)"],
+  PPMT: ["rate, period, nper, pv", "The principal part of a specific loan payment.", "=PPMT(0.01,1,60,500000)"],
+  FV: ["rate, nper, pmt, [pv]", "Future value of regular savings with interest.", "=FV(0.005,120,-5000)"],
+  PV: ["rate, nper, pmt", "Present value — what future payments are worth today.", "=PV(0.005,120,-5000)"],
+  NPV: ["rate, value1, [value2], …", "Net present value of future cash flows.", "=NPV(0.1,100,200,300)"],
+  RATE: ["nper, pmt, pv", "The interest rate per period of a loan.", "=RATE(60,-11122,500000)"],
+  NPER: ["rate, pmt, pv", "How many periods a loan takes to repay.", "=NPER(0.01,-11122,500000)"],
+  SLN: ["cost, salvage, life", "Straight-line depreciation per period.", "=SLN(100000,10000,5)"],
+  DB: ["cost, salvage, life, period", "Declining-balance depreciation.", "=DB(100000,10000,5,1)"],
+  DDB: ["cost, salvage, life, period", "Double-declining-balance depreciation.", "=DDB(100000,10000,5,1)"],
+
+  ISBLANK: ["value", "TRUE if the cell is empty.", "=ISBLANK(F1)"],
+  ISNUMBER: ["value", "TRUE if the value is a number.", "=ISNUMBER(42)"],
+  ISTEXT: ["value", "TRUE if the value is text.", '=ISTEXT("hi")'],
+  ISERROR: ["value", "TRUE if the value is any error.", "=ISERROR(1/0)"],
+  ISNA: ["value", "TRUE only for #N/A errors.", "=ISNA(NA())"],
+  ISLOGICAL: ["value", "TRUE if the value is TRUE or FALSE.", "=ISLOGICAL(TRUE)"],
+  ISEVEN: ["number", "TRUE for even numbers.", "=ISEVEN(4)"],
+  ISODD: ["number", "TRUE for odd numbers.", "=ISODD(7)"],
+  NA: ["", "The #N/A error value (means: not available).", "=ISNA(NA())"],
+
+  BIN2DEC: ["binary", "Binary → decimal.", "=BIN2DEC(1010)"],
+  DEC2BIN: ["decimal", "Decimal → binary.", "=DEC2BIN(10)"],
+  HEX2DEC: ["hex", "Hexadecimal → decimal.", '=HEX2DEC("FF")'],
+  DEC2HEX: ["decimal", "Decimal → hexadecimal.", "=DEC2HEX(255)"],
+  BITAND: ["number1, number2", "Bitwise AND of two numbers.", "=BITAND(13,25)"],
+  BITOR: ["number1, number2", "Bitwise OR of two numbers.", "=BITOR(13,25)"],
+  DELTA: ["number1, [number2]", "1 if the numbers are equal, otherwise 0.", "=DELTA(5,5)"]
+};
+/* ================= Function reference sidebar ================= */
+let selectedFn = null;
+function showFnHelp(name) {
+  selectedFn = name;
+  const h = FN_HELP[name];
+  const args = h ? h[0] : "…";
+  $("fhName").textContent = name;
+  $("fhSyntax").textContent = "=" + name + "(" + args + ")";
+  $("fhDesc").textContent = h ? h[1]
+    : "An Excel worksheet function. Type =" + name + "( and its arguments — the grid calculates it live. See the Microsoft docs link below for full details.";
+  const exEl = $("fhEx");
+  if (h && h[2]) {
+    let result = "";
+    try {
+      let v = hf.calculateFormula(fixBooleans(h[2]), curSheet);
+      if (v && typeof v === "object" && v.value !== undefined) v = v.value;
+      if (typeof v === "number") v = Math.round(v * 1e6) / 1e6;
+      result = String(v);
+    } catch (e) { result = ""; }
+    exEl.innerHTML = "";
+    exEl.append("Example: " + h[2] + "  ");
+    if (result !== "") {
+      const b = document.createElement("b");
+      b.textContent = "→ " + result;
+      exEl.appendChild(b);
+    }
+    exEl.style.display = "block";
+  } else exEl.style.display = "none";
+  $("fhDocs").href = "https://support.microsoft.com/en-us/search?query=" +
+    encodeURIComponent(name.replace(/\./g, " ") + " function excel");
+  $("fnhelp").style.display = "block";
+  document.querySelectorAll("#fnlist li").forEach(li =>
+    li.classList.toggle("selfn", li.dataset.fn === name));
+}
+function insertFn(name) {
+  if (editing) { editor.value += name + "("; editor.focus(); }
+  else startEdit(active.r, active.c, "=" + name + "(");
+}
+$("fhInsert").onclick = () => { if (selectedFn) insertFn(selectedFn); };
+$("fhClose").onclick = () => {
+  $("fnhelp").style.display = "none";
+  selectedFn = null;
+  document.querySelectorAll("#fnlist li.selfn").forEach(li => li.classList.remove("selfn"));
+};
+
+function buildFunctionList() {
+  const names = hf.getRegisteredFunctionNames().sort();
+  $("fncount").textContent = names.length + " Excel functions — click one to see how to use it";
+  const ul = $("fnlist");
+  const render = filter => {
+    ul.innerHTML = "";
+    const f = filter.toUpperCase();
+    names.filter(n => !f || n.includes(f)).forEach(n => {
+      const li = document.createElement("li");
+      li.textContent = n;
+      li.dataset.fn = n;
+      if (n === selectedFn) li.classList.add("selfn");
+      li.title = FN_HELP[n] ? FN_HELP[n][1] : "Click for how to use " + n;
+      li.onclick = () => showFnHelp(n);
+      li.ondblclick = () => insertFn(n);
+      ul.appendChild(li);
+    });
+  };
+  render("");
+  $("fnsearch").addEventListener("input", e => render(e.target.value));
+}
+
+/* ================= Tools help modal ================= */
+$("btnHelp").onclick = () => $("helpmodal").classList.add("open");
+$("helpClose").onclick = () => $("helpmodal").classList.remove("open");
+$("helpmodal").onclick = e => { if (e.target === e.currentTarget) $("helpmodal").classList.remove("open"); };
+
+/* ================= Boot ================= */
+hf.addSheet("Sheet1");
+curSheet = hf.getSheetId("Sheet1");
+buildGrid();
+renderTabs();
+buildFunctionList();
+
+/* demo starter data so the tool isn't empty */
+hf.batch(() => {
+  const demo = [
+    ["Item", "Qty", "Price", "Total"],
+    ["Apples", 12, 3.5, "=B2*C2"],
+    ["Bananas", 8, 1.25, "=B3*C3"],
+    ["Cherries", 5, 9.99, "=B4*C4"],
+    ["", "", "Grand Total", "=SUM(D2:D4)"]
+  ];
+  demo.forEach((row, r) => row.forEach((v, c) => {
+    if (v !== "") hf.setCellContents(addr(r, c), typeof v === "string" && !v.startsWith("=") ? v : v);
+  }));
+});
+paintAll();
+</script>
+</body>
+</html>
