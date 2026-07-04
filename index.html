@@ -186,6 +186,25 @@
   }
   .modal-btns button.primary { background: var(--green); color: #fff; border-color: var(--green); }
   .modal-btns button.primary:hover { background: var(--green-dark); }
+
+  /* ---------- Right-click context menu ---------- */
+  #ctxmenu {
+    position: fixed; display: none; z-index: 100; background: #fff;
+    border: 1px solid #c9c9c9; box-shadow: 0 6px 20px rgba(0,0,0,.2);
+    border-radius: 6px; padding: 4px 0; min-width: 210px; font-size: 12.5px;
+  }
+  #ctxmenu .mi { padding: 6px 16px; cursor: pointer; white-space: nowrap; color: #333; }
+  #ctxmenu .mi:hover { background: #e9efe9; color: var(--green-dark); }
+  #ctxmenu .msep { height: 1px; background: #e4e4e4; margin: 4px 0; }
+
+  /* ---------- Formula autocomplete (like Excel) ---------- */
+  #fnac {
+    position: absolute; display: none; z-index: 6; background: #fff;
+    border: 1px solid #c9c9c9; box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    border-radius: 4px; min-width: 180px; max-height: 200px; overflow-y: auto;
+  }
+  #fnac .ai { padding: 4px 10px; font: 12px Consolas, monospace; cursor: pointer; color: #333; }
+  #fnac .ai:hover, #fnac .ai.on { background: #e9efe9; color: var(--green-dark); }
 </style>
 </head>
 <body>
@@ -230,6 +249,8 @@
   <span class="grp-label">Grid</span>
   <button id="btnMoreRows" title="Add rows — you choose how many">+ Rows…</button>
   <button id="btnMoreCols" title="Add columns — you choose how many">+ Cols…</button>
+  <button id="btnDelRow" title="Delete the selected row(s) — formulas adjust automatically">− Row</button>
+  <button id="btnDelCol" title="Delete the selected column(s) — formulas adjust automatically">− Col</button>
   <span class="sep"></span>
   <button id="btnHelp" title="How to use every tool and shortcut">❓ Help</button>
 </div>
@@ -244,6 +265,7 @@
   <div id="gridwrap">
     <table id="grid"><thead></thead><tbody></tbody></table>
     <input id="celleditor" spellcheck="false" autocomplete="off">
+    <div id="fnac"></div>
   </div>
   <div id="sidebar">
     <h3>ƒx Formula Reference</h3>
@@ -354,6 +376,9 @@
     <table>
       <tr><td>↶ Undo / ↷ Redo</td><td>Step backwards / forwards. Shortcut: <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</td></tr>
       <tr><td>✕ Clear</td><td>Empty the selected cells. Shortcut: <kbd>Delete</kbd>.</td></tr>
+      <tr><td>Right-click</td><td>Excel-style menu on any cell or header: cut / copy / paste, <b>insert or delete rows and columns</b>, clear contents. Formulas adjust automatically when rows/columns move.</td></tr>
+      <tr><td>− Row / − Col</td><td>Delete the selected row(s) or column(s) from the toolbar.</td></tr>
+      <tr><td>Selecting</td><td>Click a cell and <b>drag</b> to select a range. Click a row number or column letter to select the whole row/column — drag or <kbd>Shift</kbd>+click across headers for several.</td></tr>
     </table>
 
     <h4>Automate</h4>
@@ -384,6 +409,7 @@
     <table>
       <tr><td>Formula bar (fx)</td><td>Click a cell, type <b>=SUM(A1:A10)</b> and press <kbd>Enter</kbd>. While typing a formula you can <b>click any cell</b> to insert its reference, just like Excel.</td></tr>
       <tr><td>Name box</td><td>Type a cell address (e.g. <b>C10</b>) and press <kbd>Enter</kbd> to jump there.</td></tr>
+      <tr><td>Autocomplete</td><td>Type <b>=</b> and a few letters in a cell — matching functions pop up like in Excel. Press <kbd>Tab</kbd> or click to complete.</td></tr>
       <tr><td>Sidebar list</td><td><b>Click any function</b> to see its syntax, description and a worked example — then press "Insert into cell". Double-click inserts straight away.</td></tr>
     </table>
 
@@ -400,6 +426,8 @@
     </div>
   </div>
 </div>
+
+<div id="ctxmenu"></div>
 
 <div id="bottombar">
   <div id="sheettabs"></div>
@@ -625,6 +653,7 @@ function commitEdit(move) {
 function stopEdit() {
   editing = false; editTarget = null;
   editor.style.display = "none"; editor.value = "";
+  hideAC();
   $("gridwrap").focus?.();
 }
 function cancelEdit() { stopEdit(); paintAll(); }
@@ -658,48 +687,105 @@ tbody.addEventListener("mousedown", e => {
     return;
   }
   if (editing) commitEdit();
-  dragging = true;
+  // right-click inside the current selection keeps it (Excel behaviour)
+  if (e.button === 2) {
+    const s = normSel();
+    if (r >= s.r1 && r <= s.r2 && c >= s.c1 && c <= s.c2) return;
+  }
+  dragging = e.button === 0;
   if (e.shiftKey) { sel = { r1: anchor.r, c1: anchor.c, r2: r, c2: c }; }
   else { anchor = { r, c }; sel = { r1: r, c1: c, r2: r, c2: c }; }
   active = { r, c };
   paintAll();
 });
+let hdrDrag = null;   // "row" | "col" while dragging over headers
 tbody.addEventListener("mouseover", e => {
+  if (hdrDrag === "row") {
+    const th = e.target.closest("th[data-r]");
+    if (th) { sel.r2 = +th.dataset.r; paintAll(); }
+    return;
+  }
   if (!dragging) return;
   const td = e.target.closest("td");
   if (!td) return;
   sel.r2 = +td.dataset.r; sel.c2 = +td.dataset.c;
   paintAll();
 });
-document.addEventListener("mouseup", () => dragging = false);
+document.addEventListener("mouseup", () => { dragging = false; hdrDrag = null; });
 tbody.addEventListener("dblclick", e => {
   const td = e.target.closest("td");
   if (!td) return;
   startEdit(+td.dataset.r, +td.dataset.c);
 });
-// click column header selects column, row header selects row
+// click column header selects the column; drag or shift+click selects several
 thead.addEventListener("mousedown", e => {
   const th = e.target.closest("th[data-c]");
   if (!th) return;
   const c = +th.dataset.c;
-  sel = { r1: 0, c1: c, r2: ROWS - 1, c2: c }; active = { r: 0, c }; anchor = { r: 0, c };
+  if (e.shiftKey) { sel.r1 = 0; sel.r2 = ROWS - 1; sel.c2 = c; }
+  else { sel = { r1: 0, c1: c, r2: ROWS - 1, c2: c }; active = { r: 0, c }; anchor = { r: 0, c }; }
+  if (e.button === 0) hdrDrag = "col";
   paintAll();
 });
+thead.addEventListener("mouseover", e => {
+  if (hdrDrag !== "col") return;
+  const th = e.target.closest("th[data-c]");
+  if (th) { sel.c2 = +th.dataset.c; paintAll(); }
+});
+// click row header selects the row; drag or shift+click selects several
 tbody.addEventListener("mousedown", e => {
   const th = e.target.closest("th[data-r]");
   if (!th) return;
   const r = +th.dataset.r;
-  sel = { r1: r, c1: 0, r2: r, c2: COLS - 1 }; active = { r, c: 0 }; anchor = { r, c: 0 };
+  if (e.shiftKey) { sel.c1 = 0; sel.c2 = COLS - 1; sel.r2 = r; }
+  else { sel = { r1: r, c1: 0, r2: r, c2: COLS - 1 }; active = { r, c: 0 }; anchor = { r, c: 0 }; }
+  if (e.button === 0) hdrDrag = "row";
   paintAll();
 });
 
 /* ================= Keyboard ================= */
 editor.addEventListener("keydown", e => {
+  if (fnac.style.display === "block") {
+    if (e.key === "Tab") { e.preventDefault(); e.stopPropagation(); acComplete(); return; }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); hideAC(); return; }
+  }
   if (e.key === "Enter") { e.preventDefault(); commitEdit("down"); }
   else if (e.key === "Tab") { e.preventDefault(); commitEdit("right"); }
   else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
   e.stopPropagation();
 });
+
+/* ================= Excel-style formula autocomplete ================= */
+const fnac = $("fnac");
+let allFnNames = [], acItems = [];
+function updateAC() {
+  if (!editing || !editor.value.startsWith("=")) { hideAC(); return; }
+  const m = /([A-Z][A-Z0-9.]*)$/i.exec(editor.value);
+  if (!m) { hideAC(); return; }
+  const q = m[1].toUpperCase();
+  acItems = allFnNames.filter(n => n.startsWith(q) && n !== q).slice(0, 8);
+  if (!acItems.length) { hideAC(); return; }
+  fnac.innerHTML = "";
+  acItems.forEach((n, i) => {
+    const d = document.createElement("div");
+    d.className = "ai" + (i === 0 ? " on" : "");
+    d.textContent = n;
+    d.onmousedown = ev => { ev.preventDefault(); acComplete(n); };
+    fnac.appendChild(d);
+  });
+  fnac.style.left = editor.style.left;
+  fnac.style.top = (parseFloat(editor.style.top) + editor.offsetHeight + 1) + "px";
+  fnac.style.display = "block";
+}
+function hideAC() { fnac.style.display = "none"; acItems = []; }
+function acComplete(name) {
+  name = name || acItems[0];
+  if (!name) return;
+  editor.value = editor.value.replace(/([A-Z][A-Z0-9.]*)$/i, name + "(");
+  hideAC();
+  editor.focus();
+}
+editor.addEventListener("input", updateAC);
 
 fx.addEventListener("keydown", e => {
   if (e.key === "Enter") {
@@ -749,8 +835,7 @@ document.addEventListener("keydown", e => {
 });
 
 /* ================= Clipboard ================= */
-document.addEventListener("copy", e => {
-  if (editing || document.activeElement === fx) return;
+function selectionTSV() {
   const s = normSel();
   const rows = [];
   for (let r = s.r1; r <= s.r2; r++) {
@@ -761,14 +846,9 @@ document.addEventListener("copy", e => {
     }
     rows.push(row.join("\t"));
   }
-  e.clipboardData.setData("text/plain", rows.join("\n"));
-  e.preventDefault();
-});
-document.addEventListener("paste", e => {
-  if (editing || document.activeElement === fx || document.activeElement === namebox) return;
-  const txt = e.clipboardData.getData("text/plain");
-  if (!txt) return;
-  e.preventDefault();
+  return rows.join("\n");
+}
+function pasteText(txt) {
   const lines = txt.replace(/\r/g, "").split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   hf.batch(() => {
@@ -780,7 +860,110 @@ document.addEventListener("paste", e => {
     });
   });
   paintAll();
+}
+document.addEventListener("copy", e => {
+  if (editing || document.activeElement === fx) return;
+  e.clipboardData.setData("text/plain", selectionTSV());
+  e.preventDefault();
 });
+document.addEventListener("paste", e => {
+  if (editing || document.activeElement === fx || document.activeElement === namebox) return;
+  const txt = e.clipboardData.getData("text/plain");
+  if (!txt) return;
+  e.preventDefault();
+  pasteText(txt);
+});
+
+/* ================= Right-click menu & row/column operations ================= */
+function insertRows(at, n) { hf.addRows(curSheet, [at, n]); ROWS = Math.min(ROWS + n, 5000); buildGrid(); }
+function deleteRows(at, n) {
+  hf.removeRows(curSheet, [at, n]);
+  ROWS = Math.max(ROWS - n, 10);
+  active = { r: Math.min(at, ROWS - 1), c: active.c };
+  sel = { r1: active.r, c1: active.c, r2: active.r, c2: active.c }; anchor = { ...active };
+  buildGrid();
+}
+function insertCols(at, n) { hf.addColumns(curSheet, [at, n]); COLS = Math.min(COLS + n, 260); buildGrid(); }
+function deleteCols(at, n) {
+  hf.removeColumns(curSheet, [at, n]);
+  COLS = Math.max(COLS - n, 5);
+  active = { r: active.r, c: Math.min(at, COLS - 1) };
+  sel = { r1: active.r, c1: active.c, r2: active.r, c2: active.c }; anchor = { ...active };
+  buildGrid();
+}
+function copySel() { if (navigator.clipboard) navigator.clipboard.writeText(selectionTSV()).catch(() => {}); }
+function cutSel() { copySel(); clearSelection(); }
+function pasteSel() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) { alert("Press Ctrl+V to paste."); return; }
+  navigator.clipboard.readText()
+    .then(t => { if (t) pasteText(t); })
+    .catch(() => alert("The browser blocked menu paste — press Ctrl+V instead."));
+}
+
+const ctx = $("ctxmenu");
+function showMenu(x, y, items) {
+  ctx.innerHTML = "";
+  items.forEach(it => {
+    if (it === "-") {
+      const d = document.createElement("div");
+      d.className = "msep";
+      ctx.appendChild(d);
+      return;
+    }
+    const d = document.createElement("div");
+    d.className = "mi";
+    d.textContent = it[0];
+    d.onclick = () => { hideMenu(); it[1](); };
+    ctx.appendChild(d);
+  });
+  ctx.style.display = "block";
+  ctx.style.left = Math.min(x, innerWidth - ctx.offsetWidth - 8) + "px";
+  ctx.style.top = Math.min(y, innerHeight - ctx.offsetHeight - 8) + "px";
+}
+function hideMenu() { ctx.style.display = "none"; }
+document.addEventListener("mousedown", e => {
+  if (ctx.style.display === "block" && !ctx.contains(e.target)) hideMenu();
+});
+
+grid.addEventListener("contextmenu", e => {
+  const td = e.target.closest("td");
+  const rh = e.target.closest("th[data-r]");
+  const ch = e.target.closest("th[data-c]");
+  if (!td && !rh && !ch) return;
+  e.preventDefault();
+  if (rh) {
+    const r = +rh.dataset.r;
+    const s0 = normSel();
+    if (r < s0.r1 || r > s0.r2 || s0.c1 !== 0 || s0.c2 !== COLS - 1)
+      { sel = { r1: r, c1: 0, r2: r, c2: COLS - 1 }; active = { r, c: 0 }; paintAll(); }
+  } else if (ch) {
+    const c = +ch.dataset.c;
+    const s0 = normSel();
+    if (c < s0.c1 || c > s0.c2 || s0.r1 !== 0 || s0.r2 !== ROWS - 1)
+      { sel = { r1: 0, c1: c, r2: ROWS - 1, c2: c }; active = { r: 0, c }; paintAll(); }
+  }
+  const s = normSel();
+  const nR = s.r2 - s.r1 + 1, nC = s.c2 - s.c1 + 1;
+  const rowLbl = nR > 1 ? nR + " rows" : "row " + (s.r1 + 1);
+  const colLbl = nC > 1 ? nC + " columns" : "column " + colName(s.c1);
+  showMenu(e.clientX, e.clientY, [
+    ["✂  Cut", cutSel],
+    ["⧉  Copy", copySel],
+    ["📋  Paste", pasteSel],
+    "-",
+    ["Insert " + nR + " row(s) above", () => insertRows(s.r1, nR)],
+    ["Insert " + nR + " row(s) below", () => insertRows(s.r2 + 1, nR)],
+    ["Delete " + rowLbl, () => deleteRows(s.r1, nR)],
+    "-",
+    ["Insert " + nC + " column(s) left", () => insertCols(s.c1, nC)],
+    ["Insert " + nC + " column(s) right", () => insertCols(s.c2 + 1, nC)],
+    ["Delete " + colLbl, () => deleteCols(s.c1, nC)],
+    "-",
+    ["✕  Clear contents", clearSelection]
+  ]);
+});
+$("btnDelRow").onclick = () => { const s = normSel(); deleteRows(s.r1, s.r2 - s.r1 + 1); };
+$("btnDelCol").onclick = () => { const s = normSel(); deleteCols(s.c1, s.c2 - s.c1 + 1); };
 
 /* ================= Toolbar actions ================= */
 function clearSelection() {
@@ -1821,6 +2004,7 @@ $("fhClose").onclick = () => {
 
 function buildFunctionList() {
   const names = hf.getRegisteredFunctionNames().sort();
+  allFnNames = names;
   $("fncount").textContent = names.length + " Excel functions — click one to see how to use it";
   const ul = $("fnlist");
   const render = filter => {
