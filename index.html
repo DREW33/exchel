@@ -556,11 +556,15 @@ function normSel() {
 function addr(r, c) { return { sheet: curSheet, row: r, col: c }; }
 
 /* ================= Grid build & paint ================= */
+function syncTableWidth() {
+  grid.style.width = (46 + colW.slice(0, COLS).reduce((a, b) => a + b, 0)) + "px";
+}
 function buildGrid() {
   while (colW.length < COLS) colW.push(92);
   let cg = "<col style='width:46px'>";
   for (let c = 0; c < COLS; c++) cg += `<col style="width:${colW[c]}px">`;
   $("cgroup").innerHTML = cg;
+  syncTableWidth();
   let h = "<tr><th class='corner'></th>";
   for (let c = 0; c < COLS; c++)
     h += `<th data-c="${c}">${colName(c)}<span class="fbtn" data-f="${c}" title="Filter this column">▾</span></th>`;
@@ -799,6 +803,7 @@ document.addEventListener("mousemove", e => {
   colW[colResize.c] = w;
   const col = $("cgroup").children[colResize.c + 1];
   if (col) col.style.width = w + "px";
+  syncTableWidth();
 });
 thead.addEventListener("mouseover", e => {
   if (hdrDrag !== "col") return;
@@ -1056,6 +1061,7 @@ function autoFitColumns(onlyCol) {
     const col = $("cgroup").children[c + 1];
     if (col) col.style.width = colW[c] + "px";
   }
+  syncTableWidth();
 }
 $("btnFit").onclick = () => autoFitColumns();
 
