@@ -68,9 +68,9 @@
     font-size: 11.5px; cursor: default;
   }
   #grid thead th { top: 0; }
-  #grid tbody th { left: 0; width: 46px; min-width: 46px; }
+  #grid tbody th { left: 0; }
   #grid thead th.corner { left: 0; z-index: 4; }
-  #grid td { width: 92px; min-width: 92px; max-width: 92px; cursor: cell; }
+  #grid td { cursor: cell; }
   #grid td.num { text-align: right; }
   #grid td.err { color: #c00; font-weight: 600; }
   #grid td.insel { background: var(--sel); }
@@ -197,6 +197,27 @@
   #ctxmenu .mi:hover { background: #e9efe9; color: var(--green-dark); }
   #ctxmenu .msep { height: 1px; background: #e4e4e4; margin: 4px 0; }
 
+  /* ---------- Column filter dropdowns ---------- */
+  .fbtn {
+    float: right; font-size: 9px; color: #a8a8a8; cursor: pointer;
+    padding: 1px 3px; border-radius: 3px; margin-left: 2px;
+  }
+  .fbtn:hover { background: #d5e2d5; color: var(--green-dark); }
+  .fbtn.on { color: #fff; background: var(--green); }
+  #fpanel {
+    position: fixed; display: none; z-index: 100; background: #fff;
+    border: 1px solid #c9c9c9; box-shadow: 0 6px 20px rgba(0,0,0,.2);
+    border-radius: 6px; padding: 6px 0; min-width: 200px; max-width: 280px;
+    max-height: 320px; overflow-y: auto; font-size: 12px;
+  }
+  #fpanel .ft { padding: 4px 12px 6px; font-weight: 600; color: var(--green-dark); border-bottom: 1px solid #eee; }
+  #fpanel label { display: block; padding: 3px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #fpanel label:hover { background: #f0f6f0; }
+  #fpanel label.fall { border-bottom: 1px solid #eee; font-weight: 600; }
+  #fpanel .fbtns { display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px 4px; border-top: 1px solid #eee; margin-top: 4px; }
+  #fpanel .fbtns button { padding: 4px 12px; border-radius: 4px; border: 1px solid var(--grid-line); background: #fff; cursor: pointer; font-size: 12px; }
+  #fpanel .fbtns button.primary { background: var(--green); color: #fff; border-color: var(--green); }
+
   /* ---------- Formula autocomplete (like Excel) ---------- */
   #fnac {
     position: absolute; display: none; z-index: 6; background: #fff;
@@ -246,6 +267,11 @@
   <label class="btn" for="mergeInput" title="Combine several .xlsx / .csv files into this workbook">📚 Merge Files<input type="file" id="mergeInput" multiple accept=".xlsx,.xls,.csv" style="display:none"></label>
   <button id="btnAnalyze" title="One-click summary report: count, sum, average, min, max, distinct per column">📈 Analyze</button>
   <span class="sep"></span>
+  <span class="grp-label">Format</span>
+  <button id="btnBold" title="Bold the selected cells (Ctrl+B)"><b>B</b> Bold</button>
+  <button id="btnBorder" title="Add dark borders to the selected cells">▦ Borders</button>
+  <button id="btnFit" title="Auto-fit every column width to its content">↔ Fit Cols</button>
+  <span class="sep"></span>
   <span class="grp-label">Grid</span>
   <button id="btnMoreRows" title="Add rows — you choose how many">+ Rows…</button>
   <button id="btnMoreCols" title="Add columns — you choose how many">+ Cols…</button>
@@ -263,7 +289,7 @@
 
 <div id="main">
   <div id="gridwrap">
-    <table id="grid"><thead></thead><tbody></tbody></table>
+    <table id="grid"><colgroup id="cgroup"></colgroup><thead></thead><tbody></tbody></table>
     <input id="celleditor" spellcheck="false" autocomplete="off">
     <div id="fnac"></div>
   </div>
@@ -379,6 +405,9 @@
       <tr><td>Right-click</td><td>Excel-style menu on any cell or header: cut / copy / paste, <b>insert or delete rows and columns</b>, clear contents. Formulas adjust automatically when rows/columns move.</td></tr>
       <tr><td>− Row / − Col</td><td>Delete the selected row(s) or column(s) from the toolbar.</td></tr>
       <tr><td>Selecting</td><td>Click a cell and <b>drag</b> to select a range. Click a row number or column letter to select the whole row/column — drag or <kbd>Shift</kbd>+click across headers for several.</td></tr>
+      <tr><td>Column width</td><td><b>Drag the edge</b> of a column letter to resize, <b>double-click</b> it to auto-fit that column, or use ↔ Fit Cols for all. Clean Data and opening a file auto-fit automatically.</td></tr>
+      <tr><td>▾ Filter dropdowns</td><td>Every column letter has a <b>▾</b> — click it to tick/untick the values you want visible, exactly like Excel's AutoFilter. Filtered columns show a green ▾. "Clear filter" or ⊘ Show All removes it.</td></tr>
+      <tr><td>𝐁 Bold / ▦ Borders</td><td>Format the selected cells (bold text or dark borders). Shortcut for bold: <kbd>Ctrl+B</kbd>. On-screen formatting only — values and formulas are what get saved to .xlsx.</td></tr>
     </table>
 
     <h4>Automate</h4>
@@ -428,6 +457,7 @@
 </div>
 
 <div id="ctxmenu"></div>
+<div id="fpanel"></div>
 
 <div id="bottombar">
   <div id="sheettabs"></div>
@@ -486,6 +516,10 @@ function fixBooleans(f) {
 let hf = HyperFormula.buildEmpty({ licenseKey: "gpl-v3" });
 let curSheet = 0;
 let ROWS = 100, COLS = 26;
+let colW = [];                     // per-column pixel widths
+let cellStyles = new Map();        // "sheet|r|c" -> { b: bold, bd: border }
+let colFilters = new Map();        // col -> Set of allowed display texts
+let colResize = null;              // { c, x, w } while dragging a header edge
 
 /* selection state */
 let sel = { r1: 0, c1: 0, r2: 0, c2: 0 };   // normalized on read
@@ -523,8 +557,13 @@ function addr(r, c) { return { sheet: curSheet, row: r, col: c }; }
 
 /* ================= Grid build & paint ================= */
 function buildGrid() {
+  while (colW.length < COLS) colW.push(92);
+  let cg = "<col style='width:46px'>";
+  for (let c = 0; c < COLS; c++) cg += `<col style="width:${colW[c]}px">`;
+  $("cgroup").innerHTML = cg;
   let h = "<tr><th class='corner'></th>";
-  for (let c = 0; c < COLS; c++) h += `<th data-c="${c}">${colName(c)}</th>`;
+  for (let c = 0; c < COLS; c++)
+    h += `<th data-c="${c}">${colName(c)}<span class="fbtn" data-f="${c}" title="Filter this column">▾</span></th>`;
   thead.innerHTML = h + "</tr>";
   let b = "";
   for (let r = 0; r < ROWS; r++) {
@@ -533,7 +572,9 @@ function buildGrid() {
     b += "</tr>";
   }
   tbody.innerHTML = b;
+  updateFbtns();
   paintAll();
+  applyFilters();
 }
 
 function displayValue(r, c) {
@@ -565,6 +606,9 @@ function paintAll() {
       td.className = cls.trim();
       const bg = cfMap ? cfMap.get(r + "," + cc) : undefined;
       td.style.background = bg || "";
+      const st = cellStyles.get(curSheet + "|" + r + "|" + cc);
+      td.style.fontWeight = st && st.b ? "600" : "";
+      td.style.border = st && st.bd ? "1px solid #555" : "";
     }
   }
   // header highlight
@@ -711,21 +755,50 @@ tbody.addEventListener("mouseover", e => {
   sel.r2 = +td.dataset.r; sel.c2 = +td.dataset.c;
   paintAll();
 });
-document.addEventListener("mouseup", () => { dragging = false; hdrDrag = null; });
+document.addEventListener("mouseup", () => { dragging = false; hdrDrag = null; colResize = null; });
 tbody.addEventListener("dblclick", e => {
   const td = e.target.closest("td");
   if (!td) return;
   startEdit(+td.dataset.r, +td.dataset.c);
 });
-// click column header selects the column; drag or shift+click selects several
+// click column header selects the column; drag or shift+click selects several;
+// ▾ opens the filter; dragging the right edge resizes; double-click auto-fits
 thead.addEventListener("mousedown", e => {
   const th = e.target.closest("th[data-c]");
   if (!th) return;
   const c = +th.dataset.c;
+  if (e.target.classList.contains("fbtn")) {
+    e.preventDefault();
+    openFilterPanel(c, e.clientX, e.clientY);
+    return;
+  }
+  const rect = th.getBoundingClientRect();
+  if (e.button === 0 && rect.right - e.clientX < 6) {
+    colResize = { c, x: e.clientX, w: colW[c] };
+    e.preventDefault();
+    return;
+  }
   if (e.shiftKey) { sel.r1 = 0; sel.r2 = ROWS - 1; sel.c2 = c; }
   else { sel = { r1: 0, c1: c, r2: ROWS - 1, c2: c }; active = { r: 0, c }; anchor = { r: 0, c }; }
   if (e.button === 0) hdrDrag = "col";
   paintAll();
+});
+thead.addEventListener("mousemove", e => {
+  if (colResize) return;
+  const th = e.target.closest("th[data-c]");
+  if (!th) return;
+  th.style.cursor = (th.getBoundingClientRect().right - e.clientX < 6) ? "col-resize" : "";
+});
+thead.addEventListener("dblclick", e => {
+  const th = e.target.closest("th[data-c]");
+  if (th && !e.target.classList.contains("fbtn")) autoFitColumns(+th.dataset.c);
+});
+document.addEventListener("mousemove", e => {
+  if (!colResize) return;
+  const w = Math.max(40, colResize.w + e.clientX - colResize.x);
+  colW[colResize.c] = w;
+  const col = $("cgroup").children[colResize.c + 1];
+  if (col) col.style.width = w + "px";
 });
 thead.addEventListener("mouseover", e => {
   if (hdrDrag !== "col") return;
@@ -817,6 +890,7 @@ document.addEventListener("keydown", e => {
   if (ctrl && e.key.toLowerCase() === "d") { e.preventDefault(); fillDown(); return; }
   if (ctrl && e.key.toLowerCase() === "r") { e.preventDefault(); fillRight(); return; }
   if (ctrl && e.key.toLowerCase() === "a") { e.preventDefault(); sel = { r1: 0, c1: 0, r2: ROWS - 1, c2: COLS - 1 }; paintAll(); return; }
+  if (ctrl && e.key.toLowerCase() === "b") { e.preventDefault(); toggleStyle("b"); return; }
   switch (e.key) {
     case "ArrowUp": e.preventDefault(); moveActive(-1, 0, e.shiftKey); return;
     case "ArrowDown": e.preventDefault(); moveActive(1, 0, e.shiftKey); return;
@@ -964,6 +1038,120 @@ grid.addEventListener("contextmenu", e => {
 });
 $("btnDelRow").onclick = () => { const s = normSel(); deleteRows(s.r1, s.r2 - s.r1 + 1); };
 $("btnDelCol").onclick = () => { const s = normSel(); deleteCols(s.c1, s.c2 - s.c1 + 1); };
+
+/* ================= Auto-fit column widths ================= */
+const measurer = document.createElement("canvas").getContext("2d");
+function autoFitColumns(onlyCol) {
+  measurer.font = "12.5px 'Segoe UI', Calibri, Arial, sans-serif";
+  const dims = hf.getSheetDimensions(curSheet);
+  const rMax = Math.min(dims.height, ROWS, 500);
+  for (let c = 0; c < COLS; c++) {
+    if (onlyCol !== undefined && c !== onlyCol) continue;
+    let w = 60;
+    for (let r = 0; r < rMax; r++) {
+      const d = displayValue(r, c);
+      if (d.text) w = Math.max(w, measurer.measureText(d.text).width + 18);
+    }
+    colW[c] = Math.min(Math.round(w), 340);
+    const col = $("cgroup").children[c + 1];
+    if (col) col.style.width = colW[c] + "px";
+  }
+}
+$("btnFit").onclick = () => autoFitColumns();
+
+/* ================= Excel-style column filter dropdowns ================= */
+const fpanel = $("fpanel");
+function openFilterPanel(c, x, y) {
+  const dims = hf.getSheetDimensions(curSheet);
+  const values = new Set();
+  for (let r = 1; r < Math.min(dims.height, ROWS); r++) values.add(displayValue(r, c).text);
+  const list = [...values].sort(smartCmp).slice(0, 300);
+  const cur = colFilters.get(c);
+
+  fpanel.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "ft";
+  title.textContent = "Filter column " + colName(c);
+  fpanel.appendChild(title);
+
+  const boxes = [];
+  const mkChk = (label, checked, cls) => {
+    const el = document.createElement("label");
+    if (cls) el.className = cls;
+    const q = document.createElement("input");
+    q.type = "checkbox"; q.checked = checked;
+    el.appendChild(q);
+    el.append(" " + label);
+    fpanel.appendChild(el);
+    return q;
+  };
+  const allQ = mkChk("(Select all)", !cur, "fall");
+  allQ.onchange = () => boxes.forEach(b => b.q.checked = allQ.checked);
+  list.forEach(t => boxes.push({ val: t, q: mkChk(t === "" ? "(Blanks)" : t, !cur || cur.has(t)) }));
+
+  const btns = document.createElement("div");
+  btns.className = "fbtns";
+  const clr = document.createElement("button");
+  clr.textContent = "Clear filter";
+  clr.onclick = () => { colFilters.delete(c); fpanel.style.display = "none"; updateFbtns(); applyFilters(); };
+  const ok = document.createElement("button");
+  ok.textContent = "OK"; ok.className = "primary";
+  ok.onclick = () => {
+    const allowed = new Set(boxes.filter(b => b.q.checked).map(b => b.val));
+    if (allowed.size === boxes.length) colFilters.delete(c);
+    else colFilters.set(c, allowed);
+    fpanel.style.display = "none";
+    updateFbtns(); applyFilters();
+  };
+  btns.append(clr, ok);
+  fpanel.appendChild(btns);
+
+  fpanel.style.display = "block";
+  fpanel.style.left = Math.min(x, innerWidth - 260) + "px";
+  fpanel.style.top = Math.min(y + 10, innerHeight - 340) + "px";
+}
+document.addEventListener("mousedown", e => {
+  if (fpanel.style.display === "block" && !fpanel.contains(e.target) && !e.target.classList.contains("fbtn"))
+    fpanel.style.display = "none";
+});
+function updateFbtns() {
+  thead.querySelectorAll(".fbtn").forEach(b => b.classList.toggle("on", colFilters.has(+b.dataset.f)));
+}
+function applyFilters() {
+  const fs = [...colFilters.entries()];
+  const dims = hf.getSheetDimensions(curSheet);
+  for (let r = 1; r < tbody.rows.length; r++) {
+    let show = true;
+    if (fs.length && r < dims.height) {
+      for (const [c, set] of fs) {
+        if (!set.has(displayValue(r, c).text)) { show = false; break; }
+      }
+    }
+    tbody.rows[r].style.display = show ? "" : "none";
+  }
+}
+
+/* ================= Cell formatting: Bold & Borders ================= */
+function toggleStyle(prop) {
+  const s = normSel();
+  let allHave = true;
+  outer:
+  for (let r = s.r1; r <= s.r2; r++)
+    for (let c = s.c1; c <= s.c2; c++) {
+      const st = cellStyles.get(curSheet + "|" + r + "|" + c);
+      if (!st || !st[prop]) { allHave = false; break outer; }
+    }
+  for (let r = s.r1; r <= s.r2; r++)
+    for (let c = s.c1; c <= s.c2; c++) {
+      const k = curSheet + "|" + r + "|" + c;
+      const st = cellStyles.get(k) || {};
+      if (allHave) delete st[prop]; else st[prop] = 1;
+      if (st.b || st.bd) cellStyles.set(k, st); else cellStyles.delete(k);
+    }
+  paintAll();
+}
+$("btnBold").onclick = () => toggleStyle("b");
+$("btnBorder").onclick = () => toggleStyle("bd");
 
 /* ================= Toolbar actions ================= */
 function clearSelection() {
@@ -1199,6 +1387,7 @@ function buildPivotSheet(rng, ri, ci, vi, agg) {
   COLS = Math.max(COLS, (out[2] ? out[2].length : 2) + 5);
   active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; anchor = { r: 0, c: 0 };
   buildGrid(); renderTabs();
+  autoFitColumns();
   return { lastRow: rowKeys.length + 2 };
 }
 $("pvCreate").onclick = createPivot;
@@ -1255,8 +1444,9 @@ function cleanData(quiet) {
       }
     }
   });
+  autoFitColumns();
   paintAll();
-  const msg = `• ${trimmed} cell(s) trimmed / extra spaces removed\n• ${converted} text number(s) converted to real numbers\n• ${blankRows} blank row(s) removed\n• ${dupes} duplicate row(s) removed`;
+  const msg = `• ${trimmed} cell(s) trimmed / extra spaces removed\n• ${converted} text number(s) converted to real numbers\n• ${blankRows} blank row(s) removed\n• ${dupes} duplicate row(s) removed\n• column widths auto-fitted to the content`;
   if (!quiet) alert("🧹 Clean complete\n\n" + msg);
   return msg;
 }
@@ -1455,6 +1645,8 @@ function filterRows() {
     ".\nRow 1 stays visible as the header. Click ⊘ Show All to remove the filter.\n(Hidden rows are only hidden on screen — saving still exports everything.)");
 }
 function clearFilter() {
+  colFilters.clear();
+  updateFbtns();
   for (const tr of tbody.rows) tr.style.display = "";
 }
 
@@ -1517,6 +1709,7 @@ $("mergeInput").addEventListener("change", async e => {
     ROWS = Math.max(ROWS, Math.min(rows.length + 20, 2000));
   }
   renderTabs(); buildGrid();
+  autoFitColumns();
   e.target.value = "";
 });
 
@@ -1563,6 +1756,7 @@ function analyzeSheet() {
   COLS = Math.max(COLS, nCols + 4);
   active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; anchor = { r: 0, c: 0 };
   buildGrid(); renderTabs();
+  autoFitColumns();
 }
 
 /* ================= ⚡ Auto Report — one click does everything ================= */
@@ -1673,7 +1867,11 @@ function renderTabs() {
     const div = document.createElement("div");
     div.className = "sheettab" + (id === curSheet ? " cur" : "");
     div.textContent = name;
-    div.onclick = () => { curSheet = id; active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; renderTabs(); paintAll(); };
+    div.onclick = () => {
+      curSheet = id; active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 };
+      colFilters.clear(); updateFbtns();
+      renderTabs(); paintAll(); applyFilters();
+    };
     div.ondblclick = () => {
       const nn = prompt("Rename sheet:", name);
       if (nn && nn !== name) { try { hf.renameSheet(id, nn); renderTabs(); } catch (e) { alert(e.message); } }
@@ -1693,6 +1891,7 @@ function resetWorkbook() {
   hf.addSheet("Sheet1");
   curSheet = hf.getSheetId("Sheet1");
   ROWS = 100; COLS = 26;
+  colW = []; cellStyles.clear(); colFilters.clear(); cfRules = [];
   active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 }; anchor = { r: 0, c: 0 };
   buildGrid(); renderTabs();
 }
@@ -1749,8 +1948,10 @@ function loadWorkbook(wb) {
   if (hf.getSheetNames().length === 0) hf.addSheet("Sheet1");
   curSheet = hf.getSheetId(hf.getSheetNames()[0]);
   ROWS = Math.min(maxR, 1000); COLS = Math.min(maxC, 104);
+  colW = []; cellStyles.clear(); colFilters.clear(); cfRules = [];
   active = { r: 0, c: 0 }; sel = { r1: 0, c1: 0, r2: 0, c2: 0 };
   buildGrid(); renderTabs();
+  autoFitColumns();
 }
 
 function saveXlsx() {
